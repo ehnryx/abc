@@ -29,9 +29,12 @@ def get_contents(args) -> List[Path]:
     return sorted(set(walk_dir(path=args.abc_root)))
 
 
+def get_contents_relative(args) -> List[Path]:
+    return [f.relative_to(args.abc_root) for f in get_contents(args)]
+
+
 def main(args):
-    contents = get_contents(args)
-    print("\n".join(str(f.relative_to(args.abc_root)) for f in contents))
+    print("\n".join(str(f) for f in get_contents_relative(args)))
 
 
 def register(subs):

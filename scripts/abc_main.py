@@ -2,6 +2,7 @@ import argparse
 
 from pathlib import Path
 
+import abc_find
 import abc_insert
 import abc_list
 
@@ -16,6 +17,7 @@ def parse_args():
     )
     abc_insert.register(subparsers)
     abc_list.register(subparsers)
+    abc_find.register(subparsers)
     return parser.parse_args()
 
 
