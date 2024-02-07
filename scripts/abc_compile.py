@@ -23,7 +23,7 @@ def get_compile_command(args):
     if args.opt_info:
         cmd += "-fopt-info-vec-optimized -fopt-info-loop-optimized".split()
     if args.debug:
-        cmd += "-ggdb -fsanitize=address,undefined -fno-omit-frame-pointer -D DEBUG".split()
+        cmd += "-O0 -ggdb -fsanitize=address,undefined -fno-omit-frame-pointer -D DEBUG".split()
     return cmd + args.extra_args
 
 
