@@ -1,0 +1,7 @@
+__pycache__
+to_submit.cpp
+
+*.swap
+*.swp
+.clangd
+.vscode

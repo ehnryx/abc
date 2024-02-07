@@ -1,0 +1,5 @@
+#!/bin/bash
+
+abc_root=$(abc_root.sh)
+echo "Using abc_root='${abc_root}'"
+python3 "${abc_root}/scripts/abc_main.py" "${abc_root}" "${@:1}"
