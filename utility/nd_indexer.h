@@ -1,6 +1,9 @@
-/* N-Dimensional Indexer
+/** N-Dimensional Indexer
  * USAGE
- *  idk
+ *  nd_indexer<3> idx(n1, n2, n3);
+ *  auto t = idx.get(i, j, k); // flattened index (row-major)
+ *  auto [i, j, k] = idx.from_index(t); // gets the tuple
+ *  idx.size() == n1 * n2 * n3; // total size
  */
 #pragma once
 
@@ -21,21 +24,6 @@ struct nd_indexer : nd_indexer<dims - 1> {
   size_t get(size_t cur_i, Args... is) const {
     return cur_i * nested_indexer::size() + nested_indexer::get(is...);
   }
-  template <typename... Args>
-  size_t at(size_t cur_i, Args... is) const {
-    size_t index = cur_i * nested_indexer::size() + nested_indexer::at(is...);
-    assert(index < _size);
-    return index;
-  }
-  template <typename... Args>
-  size_t at_slow(size_t cur_i, Args... is) const {
-    if (size_t index = cur_i * nested_indexer::size() + nested_indexer::at_slow(is...);
-        index < _size) [[likely]]
-      return index;
-    throw std::invalid_argument(
-        "nd_indexer<" + std::to_string(dims) + "> out of bounds @ " +
-        std::to_string(cur_i));
-  }
   auto from_index(size_t i) const {
     size_t cur_i = i / nested_indexer::size();
     return std::tuple_cat(
@@ -49,14 +37,5 @@ struct nd_indexer<1> {
   nd_indexer(size_t dim, ...) : _size(dim) {}
   size_t size() const { return _size; }
   size_t get(size_t i) const { return i; }
-  size_t at(size_t i) const {
-    assert(i < _size);
-    return i;
-  }
-  size_t at_slow(size_t i) const {
-    if (i < _size) [[likely]]
-      return i;
-    throw std::invalid_argument("nd_indexer<1> out of bounds @ " + std::to_string(i));
-  }
   auto from_index(size_t i) const { return std::tuple(i); }
 };
