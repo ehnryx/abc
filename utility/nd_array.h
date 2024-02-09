@@ -7,7 +7,7 @@
  *  stored in row-major order in a flattened vector
  *  unable to resize
  * STATUS
- *  untested
+ *  tested: cf/46e
  */
 #pragma once
 
@@ -24,7 +24,8 @@ struct nd_array {
   nd_array(Args... ds) : indexer(ds...), data(indexer.size()) {}
   template <typename... Args>
     requires(sizeof...(Args) == dims + 1)
-  nd_array(Args... ds) : indexer(ds...), data(indexer.size(), (ds, ...)) {}
+  nd_array(Args... ds)
+      : indexer(ds...), data(indexer.size(), ([](auto x) { return x; }(ds), ...)) {}
   size_t size() const { return indexer.size(); }
   T& operator[](size_t i) { return data[i]; }
   const T& operator[](size_t i) const { return data[i]; }

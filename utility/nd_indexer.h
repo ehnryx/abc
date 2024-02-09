@@ -4,6 +4,8 @@
  *  auto t = idx.get(i, j, k); // flattened index (row-major)
  *  auto [i, j, k] = idx.from_index(t); // gets the tuple
  *  idx.size() == n1 * n2 * n3; // total size
+ * STATUS
+ *  tested: cf/46e
  */
 #pragma once
 

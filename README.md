@@ -20,5 +20,5 @@
 
 ## Depencencies
 
-`python >= 3.8`
-`g++ >= 10`
+- `python >= 3.8`
+- `g++ >= 10`
