@@ -4,20 +4,11 @@ import pty
 from pathlib import Path
 
 
-DEFAULT_COMPILER = "g++"
-COMPILER_CPP_VERSION = {
-    "g++": "-std=c++2a",
-    "g++-11": "-std=c++20",
-}
-
-
 def get_compile_command(args):
-    compiler = args.command if args.command in COMPILER_CPP_VERSION else DEFAULT_COMPILER
-    version = COMPILER_CPP_VERSION.get(compiler, "")
     code = args.input if args.input.suffix else args.input.with_suffix(".cpp")
     binary = code.stem if args.output is None else args.output
     cmd = (
-        f"{compiler} {version} {code} -o {binary} -I {args.abc_root}"
+        f"g++ -std=c++20 {code} -o {binary} -I {args.abc_root}"
         " -O2 -g -fmax-errors=1 -Wall -Wextra -Wshadow -Wconversion"
     ).split()
     if args.opt_info:
@@ -36,7 +27,7 @@ def main(args):
 def register(subs):
     parser = subs.add_parser(
         "compile",
-        aliases=list(COMPILER_CPP_VERSION.keys()),
+        aliases=["c"],
         description="Replace includes with code. Paths should be relative to abc_root",
         help="Replace includes with code. Paths should be relative to abc_root",
     )
