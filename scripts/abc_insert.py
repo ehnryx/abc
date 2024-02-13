@@ -1,5 +1,7 @@
+import subprocess
+
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
 
 import abc_list
 
@@ -15,8 +17,32 @@ def get_include(line) -> Optional[Path]:
     return None
 
 
+def get_contents(args) -> Set[Path]:
+    all_contents = set(abc_list.get_contents(args))
+    if args.defines is None:
+        return all_contents
+
+    compiler_cmd = f"g++ -MM -I {args.abc_root} {args.input}" + "".join(
+        " -D " + d for d in args.defines
+    )
+    print(f"getting included headers with {compiler_cmd}")
+    compiler_run = subprocess.run(compiler_cmd.split(), capture_output=True, text=True)
+    if compiler_run.returncode != 0:
+        print(compiler_run.stderr.strip())
+        exit(compiler_run.returncode)
+    preprocessed_includes = {
+        Path(x).resolve()
+        for x in compiler_run.stdout.split()[2:]  # [object, source, headers...]
+        if x != "\\"  # sometimes included as line breaks
+    }
+    print("got included headers: " + " ".join(str(x) for x in preprocessed_includes))
+    return all_contents & preprocessed_includes
+
+
 def main(args):
-    contents = set(abc_list.get_contents(args))
+    assert args.input.is_file(), f"input file {args.input} does not exist"
+
+    contents = get_contents(args)
     inserted = set()
 
     def expand(path: Path, ouf, *, before_pragma: bool):
@@ -45,8 +71,11 @@ def main(args):
                 else:
                     ouf.write(line)
 
-    with open(args.output, "w") as f:
-        expand(args.input, f, before_pragma=False)
+    with open(args.output, "w") as ouf:
+        if args.defines is not None:
+            for d in args.defines:
+                ouf.write(f"#define {d}\n")
+        expand(args.input, ouf, before_pragma=False)
 
 
 def register(subs):
@@ -58,4 +87,11 @@ def register(subs):
     )
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", "-o", type=Path, default=Path("to_submit.cpp"))
+    parser.add_argument(
+        "--defines",
+        "-d",
+        nargs="*",
+        default=None,
+        help="respect the preprocessor and use defines (-D)",
+    )
     parser.set_defaults(func=main)
