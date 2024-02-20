@@ -27,7 +27,7 @@ def main(args):
 def register(subs):
     parser = subs.add_parser(
         "compile",
-        aliases=["c"],
+        aliases=["c", "g"],
         description="Replace includes with code. Paths should be relative to abc_root",
         help="Replace includes with code. Paths should be relative to abc_root",
     )

@@ -76,6 +76,7 @@ def main(args):
             for d in args.defines:
                 ouf.write(f"#define {d}\n")
         expand(args.input, ouf, before_pragma=False)
+    print(f"written to {args.output}")
 
 
 def register(subs):

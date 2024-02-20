@@ -21,9 +21,9 @@ struct nd_indexer : nd_indexer<dims - 1> {
   template <typename... Args>
   nd_indexer(size_t cur_dim, Args... ds)
       : nested_indexer(ds...), _size(nested_indexer::size() * cur_dim) {}
-  size_t size() const { return _size; }
+  auto size() const -> size_t { return _size; }
   template <typename... Args>
-  size_t get(size_t cur_i, Args... is) const {
+  auto get(size_t cur_i, Args... is) const -> size_t {
     return cur_i * nested_indexer::size() + nested_indexer::get(is...);
   }
   auto from_index(size_t i) const {
@@ -37,7 +37,7 @@ template <>
 struct nd_indexer<1> {
   const size_t _size;
   nd_indexer(size_t dim, ...) : _size(dim) {}
-  size_t size() const { return _size; }
-  size_t get(size_t i) const { return i; }
+  auto size() const -> size_t { return _size; }
+  auto get(size_t i) const -> size_t { return i; }
   auto from_index(size_t i) const { return std::tuple(i); }
 };

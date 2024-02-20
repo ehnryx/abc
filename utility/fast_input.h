@@ -21,7 +21,7 @@ struct fast_input {
   FILE* const ifptr;
   fast_input(FILE* _in = stdin) : S(buf), T(buf), ifptr(_in) {}
 
-  static bool is_digit(char c) { return '0' <= c and c <= '9'; }
+  static auto is_digit(char c) -> bool { return '0' <= c and c <= '9'; }
 
   explicit operator bool() const { return peek() != EOF; }
 
@@ -123,7 +123,7 @@ struct fast_input {
   }
 
   template <size_t index = 0, typename... T>
-  inline void get(std::tuple<T...>& x) {
+  inline auto get(std::tuple<T...>& x) -> void {
     if constexpr (index < sizeof...(T)) {
       *this >> (std::get<index>(x));
       get<index + 1>(x);
@@ -137,7 +137,7 @@ struct fast_input {
     x = {a, b};
   }
 
-  std::string getline() {
+  auto getline() -> std::string {
     std::string out;
     char c;
     while ((c = getc()) != '\n' && c != EOF) {

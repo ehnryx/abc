@@ -3,6 +3,7 @@
  *  PRINT_TIMING -- print timing after each SOLVE()
  *  MULTI_TEST -- multiple tests (`int T` is the first token of input)
  *  PRINT_CASE -- same as MULTI_TEST except also print "Case PRINT_CASE{i}: ans_i"
+ *  FAST_INPUT -- use fast input
  *  FAST_INPUT_BUFFER -- size of buffer for fast_input. default=16384
  */
 #pragma once
@@ -47,6 +48,10 @@ struct solve_main_wrapper {
     return 0;
   }
 };
+
+#if defined(FAST_INPUT)
+#include "utility/fast_input.h"
+#endif
 
 auto main(int argc, char** argv) -> int {
   std::cout << std::fixed << std::setprecision(10);
