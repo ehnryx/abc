@@ -9,6 +9,8 @@
  *      static out_t merge(out_t const& l, out_t const& r, args...); merges the return values
  *      void pull(Node_t const& l, Node_t const& r); pulls values from children
  *      void push(Node_t& l, Node_t& r); pushes lazy to l and r
+ *      accumulate_t<type> accumulate(accumulate_t<type>, args...); for no-push lazy
+ *        (accumulating the lazy values on the path from root to node on query)
  *    BINARY SEARCH
  *      bool contains(args&...); does the segment contain the value? update args if not
  *    BEATS
@@ -38,12 +40,12 @@
  */
 #pragma once
 
+#include "utility/helpers.h"
 #include "utility/member_checker.h"
 #include "utility/traits.h"
 
 #include <bit>
 #include <stdexcept>
-#include <type_traits>
 #include <vector>
 
 // clang-format off
@@ -52,20 +54,32 @@ MAKE_TRAITS(segment_tree_traits,
 );
 // clang-format on
 
-struct segment_tree_children_t {
-  int left = 0;
-  int right = 0;
-};
-
 struct segment_length_t {
   size_t value;
   explicit segment_length_t(size_t v) : value(v) {}
+  explicit segment_length_t(int v) : value(v) {}
   explicit segment_length_t(int64_t v) : value(v) {}
   explicit operator size_t() const { return value; }
   explicit operator int() const { return (int)value; }
   explicit operator int64_t() const { return value; }
   segment_length_t operator/(size_t c) { return segment_length_t{value / c}; }
   segment_length_t operator*(size_t c) { return segment_length_t{value / c}; }
+};
+
+template <typename T>
+struct segment_accumulate_t {
+  T value;
+  explicit segment_accumulate_t(T v) : value(v) {}
+  explicit operator T() const { return value; }
+  T operator*() const { return value; }
+  T const* operator->() const { return &value; }
+};
+template <>
+struct segment_accumulate_t<void> {};
+
+struct segment_tree_children_t {
+  int left = 0;
+  int right = 0;
 };
 
 template <typename node_t, segment_tree_traits traits>
@@ -153,6 +167,7 @@ struct persistent_segment_tree_data<node_t> {
 template <typename node_t, segment_tree_traits traits>
   requires(bool((traits & traits.PERSISTENT)))
 struct segment_tree_data<node_t, traits> : persistent_segment_tree_data<node_t> {
+  using persistent_segment_tree_data<node_t>::has_should_push;
   int64_t lim, length;
   std::vector<int> version_roots;
   std::vector<node_t> data;
@@ -170,7 +185,7 @@ struct segment_tree_data<node_t, traits> : persistent_segment_tree_data<node_t> 
     }
     data.resize(2);
     children.resize(2);
-    if constexpr (not this->has_should_push) {
+    if constexpr (not has_should_push) {
       this->pushed.reserve(capacity);
       this->pushed.resize(2);
     }
@@ -182,11 +197,13 @@ struct segment_tree_data<node_t, traits> : persistent_segment_tree_data<node_t> 
   auto make_node(int i) -> int {
     data.emplace_back(data[i]);
     children.emplace_back(children[i]);
-    if constexpr (not this->has_should_push) this->pushed.emplace_back(false);
+    if constexpr (not has_should_push) {
+      this->pushed.emplace_back(false);
+    }
     return (int)data.size() - 1;
   }
   auto skip_push(int i) -> bool {
-    if constexpr (this->has_should_push) {
+    if constexpr (has_should_push) {
       return not data[i].should_push();
     } else {
       if (this->pushed[i]) {
@@ -206,7 +223,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   static constexpr bool persistent = bool(traits & traits.PERSISTENT);
   static constexpr bool normal = not sparse and not persistent;
   static constexpr bool check_bounds = not(traits & traits.NO_CHECKS);
-  static_assert(normal + sparse + persistent == 1);
   using coordinate_t = std::conditional_t<normal, int, int64_t>;
 
   using segment_tree_data<Node_t, traits>::data;
@@ -221,19 +237,27 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   template <typename... Args>
   using return_t = _has_function_get<node_t, Args...>::type;
 
+  MEMBER_FUNCTION_CHECKER(put);
+
   using update_return_t = std::conditional_t<persistent, int, void>;
 
   MEMBER_FUNCTION_CHECKER(push);
+  static constexpr bool has_push_no_length =
+      _has_function_push<node_t, node_t&, node_t&>::value;
+  static constexpr bool has_push_with_length =
+      _has_function_push<node_t, node_t&, node_t&, segment_length_t>::value;
+  static_assert(has_push_no_length + has_push_with_length <= 1);
+
   MEMBER_FUNCTION_CHECKER(pull);
   MEMBER_FUNCTION_CHECKER(merge);
-  static constexpr bool has_push =
-      _has_function_push<node_t, node_t&, node_t&>::value or
-      _has_function_push<node_t, node_t&, node_t&, segment_length_t>::value;
   static constexpr bool has_pull = _has_function_pull<node_t, node_t, node_t>::value;
   template <typename... Args>
   static constexpr bool use_pull_as_merge =
+      has_pull &&
       not _has_function_merge<node_t, return_t<Args...>, return_t<Args...>>::value &&
       std::is_same_v<node_t, return_t<Args...>>;
+
+  MEMBER_FUNCTION_CHECKER(accumulate);
 
   MEMBER_FUNCTION_CHECKER(update_break_cond);
   MEMBER_FUNCTION_CHECKER(update_put_cond);
@@ -244,40 +268,38 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
 
   // Updates
 
-  auto push(int i, segment_length_t seg_length) -> void {
+  template <typename... Args>
+  auto push(int i, Args const&... args) -> void {
     if constexpr (sparse) {
       this->make_left(i);
       this->make_right(i);
-    } else if constexpr (persistent) {
+    }
+    if constexpr (persistent) {
       if (this->skip_push(i)) return;
       this->children[i].left = this->make_node(get_left(i));
       this->children[i].right = this->make_node(get_right(i));
     }
-    if constexpr (requires() { data[i].push(data[0], data[0], seg_length); }) {
-      data[i].push(data[get_left(i)], data[get_right(i)], seg_length);
-    } else {
-      data[i].push(data[get_left(i)], data[get_right(i)]);
-    }
+    data[i].push(data[get_left(i)], data[get_right(i)], args...);
   }
 
   template <typename... Args>
-  auto put(int i, segment_length_t seg_length, Args&&... args) -> update_return_t {
-    if constexpr (requires() { data[i].put(seg_length, args...); }) {
-      data[i].put(seg_length, std::forward<Args>(args)...);
-    } else {
-      data[i].put(std::forward<Args>(args)...);
-    }
+    requires(not _has_function_put<node_t, segment_length_t, Args...>::value)
+  auto put(int i, Args const&... args) -> update_return_t {
+    data[i].put(args...);
     if constexpr (persistent) return i;
+  }
+
+  template <typename acc_t, typename... Args>
+    requires(
+        not _has_function_accumulate<node_t, acc_t, segment_length_t, Args...>::value and
+        std::is_same_v<acc_t, typename _has_function_accumulate<node_t, acc_t, Args...>::type>)
+  auto accumulate(int i, acc_t acc, Args const&... args)
+      -> _has_function_accumulate<node_t, acc_t, Args...>::type {
+    return data[i].accumulate(acc, args...);
   }
 
   template <typename... Args>
   auto update_range(coordinate_t l, coordinate_t r, Args const&... args) -> update_return_t
-    requires(not persistent)
-  {
-    return update_range_mutable(l, r, args...);
-  }
-  template <typename... Args>
-  auto update_range_mutable(coordinate_t l, coordinate_t r, Args&... args) -> update_return_t
     requires(not persistent)
   {
     if constexpr (check_bounds) {
@@ -288,13 +310,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto update_range(int version, coordinate_t l, coordinate_t r, Args const&... args)
-      -> update_return_t
-    requires(persistent)
-  {
-    return update_range_mutable(version, l, r, args...);
-  }
-  template <typename... Args>
-  auto update_range_mutable(int version, coordinate_t l, coordinate_t r, Args&... args)
       -> update_return_t
     requires(persistent)
   {
@@ -315,23 +330,20 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
                            not _has_function_update_put_cond<node_t, Args...>::value))
   auto _update(
       coordinate_t const l, coordinate_t const r, int i, coordinate_t const seg_l,
-      coordinate_t const seg_r, Args&... args) -> update_return_t {
+      coordinate_t const seg_r, Args const&... args) -> update_return_t {
     if constexpr (_has_function_update_break_cond<node_t, Args...>::value) {
       if (data[i].update_break_cond(args...)) return;
     }
-    auto const seg_length = segment_length_t{seg_r - seg_l + 1};
     if constexpr (not _has_function_update_put_cond<node_t, Args...>::value) {
       if (l <= seg_l && seg_r <= r) {
-        if constexpr (persistent) {
-          i = this->make_node(i);
-          return put(i, seg_length, args...);
-        } else {
-          return put(i, seg_length, args...);
-        }
+        if constexpr (persistent) i = this->make_node(i);
+        if constexpr (_has_function_put<node_t, Args...>::value) return put(i, args...);
+        else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
       }
     } else {  // can't be persistent
       if (l <= seg_l && seg_r <= r && data[i].update_put_cond(args...)) {
-        return put(i, seg_length, args...);
+        if constexpr (_has_function_put<node_t, Args...>::value) return put(i, args...);
+        else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
       }
       if constexpr (check_bounds) {
         if (i >= length) {
@@ -341,10 +353,11 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
         }
       }
     }
-    if constexpr (has_push) push(i, seg_length);
-    int old_i = i;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    int const old_i = i;
     if constexpr (persistent) i = this->make_node(i);
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     if (l <= mid) {
       if constexpr (persistent) {
         this->children[i].left = _update(l, r, get_left(old_i), seg_l, mid, args...);
@@ -369,12 +382,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   auto update_point(coordinate_t x, Args const&... args) -> update_return_t
     requires(not persistent)
   {
-    return update_point_mutable(x, args...);
-  }
-  template <typename... Args>
-  auto update_point_mutable(coordinate_t x, Args&... args) -> update_return_t
-    requires(not persistent)
-  {
     if constexpr (check_bounds) {
       if (x < 0 || lim <= x) throw std::invalid_argument("update_point index out of bounds");
     }
@@ -382,12 +389,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto update_point(int version, coordinate_t x, Args const&... args) -> update_return_t
-    requires(persistent)
-  {
-    return update_point_mutable(version, x, args...);
-  }
-  template <typename... Args>
-  auto update_point_mutable(int version, coordinate_t x, Args&... args) -> update_return_t
     requires(persistent)
   {
     if constexpr (check_bounds) {
@@ -402,21 +403,18 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto _update_point(
-      coordinate_t x, int i, coordinate_t seg_l, coordinate_t seg_r, Args&... args)
-      -> update_return_t {
-    auto const seg_length = segment_length_t{seg_r - seg_l + 1};
+      coordinate_t const x, int i, coordinate_t const seg_l, coordinate_t const seg_r,
+      Args const&... args) -> update_return_t {
     if (seg_l == seg_r) {
-      if constexpr (persistent) {
-        i = this->make_node(i);
-        return put(i, seg_length, args...);
-      } else {
-        return put(i, seg_length, args...);
-      }
+      if constexpr (persistent) i = this->make_node(i);
+      if constexpr (_has_function_put<node_t, Args...>::value) return put(i, args...);
+      else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
     }
-    if constexpr (has_push) push(i, seg_length);
-    int old_i = i;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    int const old_i = i;
     if constexpr (persistent) i = this->make_node(i);
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     if (x <= mid) {
       if constexpr (persistent) {
         this->children[i].left = _update_point(x, get_left(old_i), seg_l, mid, args...);
@@ -440,13 +438,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
 
   template <typename... Args>
   auto query_range(coordinate_t l, coordinate_t r, Args const&... args) -> return_t<Args...>
-    requires(not persistent)
-  {
-    return query_range_mutable(l, r, args...);
-  }
-  template <typename... Args>
-  auto query_range_mutable(coordinate_t l, coordinate_t r, Args&... args) -> return_t<Args...>
-    requires(not persistent)
+    requires(_has_function_get<node_t, Args...>::value and not persistent)
   {
     if constexpr (check_bounds) {
       if (r < l) return data[0].get(args...);
@@ -457,14 +449,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   template <typename... Args>
   auto query_range(int version, coordinate_t l, coordinate_t r, Args const&... args)
       -> return_t<Args...>
-    requires(persistent)
-  {
-    return query_range_mutable(version, l, r, args...);
-  }
-  template <typename... Args>
-  auto query_range_mutable(int version, coordinate_t l, coordinate_t r, Args&... args)
-      -> return_t<Args...>
-    requires(persistent)
+    requires(_has_function_get<node_t, Args...>::value and persistent)
   {
     if constexpr (check_bounds) {
       if (r < l) return data[0].get(args...);
@@ -477,11 +462,12 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto _query(
-      coordinate_t l, coordinate_t r, int i, coordinate_t seg_l, coordinate_t seg_r,
-      Args&... args) -> return_t<Args...> {
+      coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
+      coordinate_t const seg_r, Args const&... args) -> return_t<Args...> {
     if (l <= seg_l && seg_r <= r) return data[i].get(args...);
-    if constexpr (has_push) push(i, segment_length_t{seg_r - seg_l + 1});
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     bool go_left = (l <= mid);
     bool go_right = (mid < r);
     if constexpr (sparse or persistent) {
@@ -506,13 +492,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
 
   template <typename... Args>
   auto query_point(coordinate_t x, Args const&... args) -> return_t<Args...>
-    requires(not persistent)
-  {
-    return query_point_mutable(x, args...);
-  }
-  template <typename... Args>
-  auto query_point_mutable(coordinate_t x, Args&... args) -> return_t<Args...>
-    requires(not persistent)
+    requires(_has_function_get<node_t, Args...>::value and not persistent)
   {
     if constexpr (check_bounds) {
       if (x < 0 || lim <= x) throw std::invalid_argument("query_point index out of bounds");
@@ -521,13 +501,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto query_point(int version, coordinate_t x, Args const&... args) -> return_t<Args...>
-    requires(persistent)
-  {
-    return query_point_mutable(version, x, args...);
-  }
-  template <typename... Args>
-  auto query_point_mutable(int version, coordinate_t x, Args&... args) -> return_t<Args...>
-    requires(persistent)
+    requires(_has_function_get<node_t, Args...>::value and persistent)
   {
     if constexpr (check_bounds) {
       if (x < 0 || lim <= x) throw std::invalid_argument("query_point index out of bounds");
@@ -537,13 +511,33 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
     }
     return _query_point(x, this->get_root(version), 0, length - 1, args...);
   }
+  template <typename acc_t, typename... Args>
+    requires(is_specialization_of<acc_t, segment_accumulate_t>)
+  auto _query_point(
+      coordinate_t const x, int const i, coordinate_t const seg_l, coordinate_t const seg_r,
+      acc_t const& acc, Args const&... args) -> return_t<acc_t, Args...> {
+    if constexpr (_has_function_accumulate<node_t, acc_t, Args...>::value) {
+      return _query_point_impl(x, i, seg_l, seg_r, accumulate(i, acc, args...), args...);
+    } else {
+      return _query_point_impl(
+          x, i, seg_l, seg_r, accumulate(i, acc, segment_length_t{seg_r - seg_l}, args...),
+          args...);
+    }
+  }
   template <typename... Args>
   auto _query_point(
-      coordinate_t x, int i, coordinate_t seg_l, coordinate_t seg_r, Args&... args)
-      -> return_t<Args...> {
+      coordinate_t const x, int const i, coordinate_t const seg_l, coordinate_t const seg_r,
+      Args const&... args) -> return_t<Args...> {
+    return _query_point_impl(x, i, seg_l, seg_r, args...);
+  }
+  template <typename... Args>
+  auto _query_point_impl(
+      coordinate_t const x, int const i, coordinate_t const seg_l, coordinate_t const seg_r,
+      Args const&... args) -> return_t<Args...> {
     if (seg_l == seg_r) return data[i].get(args...);
-    if constexpr (has_push) push(i, segment_length_t{seg_r - seg_l + 1});
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     if (x <= mid) {
       if constexpr (sparse or persistent) {
         if (not get_left(i)) return data[0].get(args...);
@@ -563,12 +557,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   auto search_left(coordinate_t l, coordinate_t r, Args... args) -> coordinate_t
     requires(not persistent)
   {
-    return search_left_mutable(l, r, args...);
-  }
-  template <typename... Args>
-  auto search_left_mutable(coordinate_t l, coordinate_t r, Args&... args) -> coordinate_t
-    requires(not persistent)
-  {
     if constexpr (check_bounds) {
       if (r < l) return lim;
       if (l < 0 || lim <= r) throw std::invalid_argument("search_left out of bounds");
@@ -577,13 +565,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto search_left(int version, coordinate_t l, coordinate_t r, Args... args) -> coordinate_t
-    requires(persistent)
-  {
-    return search_left_mutable(version, l, r, args...);
-  }
-  template <typename... Args>
-  auto search_left_mutable(int version, coordinate_t l, coordinate_t r, Args&... args)
-      -> coordinate_t
     requires(persistent)
   {
     if constexpr (check_bounds) {
@@ -597,12 +578,13 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto _search_left(
-      coordinate_t l, coordinate_t r, int i, coordinate_t seg_l, coordinate_t seg_r,
-      Args&... args) -> coordinate_t {
+      coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
+      coordinate_t const seg_r, Args&... args) -> coordinate_t {
     if (l <= seg_l && seg_r <= r && not data[i].contains(args...)) return lim;
     if (seg_l == seg_r) return seg_l;
-    if constexpr (has_push) push(i, segment_length_t{seg_r - seg_l + 1});
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     bool go_left = (l <= mid);
     bool go_right = (mid < r);
     if constexpr (sparse or persistent) {
@@ -620,12 +602,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   auto search_right(coordinate_t l, coordinate_t r, Args... args) -> coordinate_t
     requires(normal or sparse)
   {
-    return search_right_mutable(l, r, args...);
-  }
-  template <typename... Args>
-  auto search_right_mutable(coordinate_t l, coordinate_t r, Args&... args) -> coordinate_t
-    requires(normal or sparse)
-  {
     if constexpr (check_bounds) {
       if (r < l) return lim;
       if (l < 0 || lim <= r) throw std::invalid_argument("search_right out of bounds");
@@ -634,13 +610,6 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto search_right(int version, coordinate_t l, coordinate_t r, Args... args) -> coordinate_t
-    requires(persistent)
-  {
-    return search_right_mutable(version, l, r, args...);
-  }
-  template <typename... Args>
-  auto search_right_mutable(int version, coordinate_t l, coordinate_t r, Args&... args)
-      -> coordinate_t
     requires(persistent)
   {
     if constexpr (check_bounds) {
@@ -654,12 +623,13 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   }
   template <typename... Args>
   auto _search_right(
-      coordinate_t l, coordinate_t r, int i, coordinate_t seg_l, coordinate_t seg_r,
-      Args&... args) -> coordinate_t {
+      coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
+      coordinate_t const seg_r, Args&... args) -> coordinate_t {
     if (l <= seg_l && seg_r <= r && not data[i].contains(args...)) return lim;
     if (seg_l == seg_r) return seg_l;
-    if constexpr (has_push) push(i, segment_length_t{seg_r - seg_l + 1});
-    coordinate_t mid = (seg_l + seg_r) / 2;
+    if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
+    if constexpr (has_push_no_length) push(i);
+    coordinate_t const mid = (seg_l + seg_r) / 2;
     bool go_left = (l <= mid);
     bool go_right = (mid < r);
     if constexpr (sparse or persistent) {

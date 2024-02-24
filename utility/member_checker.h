@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#include <utility>
+
 #define MEMBER_TYPE_CHECKER(TYPE) \
   template <typename __class_t> \
   struct _has_type_##TYPE { \
@@ -23,7 +25,7 @@
   template <typename __class_t> \
   struct _has_variable_##VARIABLE { \
     static constexpr bool value = false; \
-    using type = void; \
+    using type = std::false_type; \
   }; \
   template <typename __class_t> \
     requires(requires { __class_t::VARIABLE; }) \
@@ -36,7 +38,7 @@
   template <typename __class_t, typename... __args_t> \
   struct _has_function_##FUNCTION { \
     static constexpr bool value = false; \
-    using type = void; \
+    using type = std::false_type; \
   }; \
   template <typename __class_t, typename... __args_t> \
     requires(requires(__class_t __class, __args_t... __args) { __class.FUNCTION(__args...); }) \
