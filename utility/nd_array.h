@@ -15,32 +15,33 @@
 
 #include <vector>
 
-template <typename T, size_t dims>
+template <typename T, size_t ndims>
 struct nd_array {
-  const nd_indexer<dims> indexer;
+  nd_indexer<ndims> const indexer;
   std::vector<T> data;
   template <typename... Args>
-    requires(sizeof...(Args) == dims)
+    requires(sizeof...(Args) == ndims)
   nd_array(Args... ds) : indexer(ds...), data(indexer.size()) {}
   template <typename... Args>
-    requires(sizeof...(Args) == dims + 1)
+    requires(sizeof...(Args) == ndims + 1)
   nd_array(Args... ds)
       : indexer(ds...), data(indexer.size(), ([](auto x) { return x; }(ds), ...)) {}
-  size_t size() const { return indexer.size(); }
-  T& operator[](size_t i) { return data[i]; }
-  const T& operator[](size_t i) const { return data[i]; }
-  auto from_index(size_t i) const { return indexer.from_index(i); }
+  auto size() const -> size_t { return indexer.size(); }
+  auto operator[](size_t i) -> T& { return data[i]; }
+  auto operator[](size_t i) const -> T const& { return data[i]; }
+  auto from_index(size_t i) const -> auto { return indexer.from_index(i); }
   // access
   template <typename... Args>
-  T& operator()(Args... is) {
+  auto operator()(Args... is) -> T& {
     return data[indexer.get(is...)];
   }
   template <typename... Args>
-  const T& operator()(Args... is) const {
+  auto operator()(Args... is) const -> T const& {
     return data[indexer.get(is...)];
   }
   template <typename... Args>
-  size_t index(Args... is) const {
+  auto index(Args... is) const -> size_t {
     return indexer.get(is...);
   }
+  auto dims() const -> auto { return indexer.dims(); }
 };

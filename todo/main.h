@@ -76,4 +76,9 @@ using ll = long long;
 constexpr char nl = '\n';
 
 #include <cassert>
+#include <map>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 using namespace std;

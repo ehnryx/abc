@@ -1,5 +1,6 @@
 import argparse
-import pty
+import subprocess
+import sys
 
 from pathlib import Path
 
@@ -21,7 +22,9 @@ def get_compile_command(args):
 def main(args):
     cmd = get_compile_command(args)
     print(f"Running `{cmd}`")
-    pty.spawn(cmd)
+    res = subprocess.run(cmd + ["-fdiagnostics-color=always"], capture_output=True)
+    sys.stderr.buffer.write(res.stderr)
+    sys.stdout.buffer.write(res.stdout)
 
 
 def register(subs):
