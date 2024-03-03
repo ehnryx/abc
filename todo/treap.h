@@ -1,0 +1,172 @@
+// Usage:  treap::node<Tag1, Tag2, ...>* root;
+// auto [t0, t1, ..., tn] treap::split<Tag>(root, k1, k2, ..., kn);
+// t = treap::merge(t0, t1, ..., tn);
+// lookup by splitting
+namespace treap {
+  // tuple index helper
+  template <typename T, T... S, typename F>
+  constexpr void for_sequence(std::integer_sequence<T, S...>, F&& f) {
+    (void(f(std::integral_constant<T, S>{})), ...);
+  }
+
+  template <typename T>
+  concept has_pull_v = requires(T a, T* p) {
+    {a.pull(p, p)};
+  };
+
+  template <typename T>
+  concept has_push_v = requires(T a, T* p) {
+    {a.push(p, p)};
+  };
+
+  template <class ...Ts>
+  struct node {
+    // TODO assert Ts... are unique?
+    node* l = nullptr;
+    node* r = nullptr;
+    int y = rand();
+    tuple<Ts...> t = {};
+    template <class T>
+    T& get() {
+      return std::get<T>(t);
+    }
+    template <class T>
+    const T& get() const {
+      return std::get<T>(t);
+    }
+    ~node() { delete l; delete r; }
+  };
+
+  // merge operation
+  template <class ...Ts>
+  node<Ts...>* pull(node<Ts...>* p) {
+    assert(p != nullptr);
+    for_sequence(make_index_sequence<sizeof...(Ts)>{}, [&](auto I) {
+      if constexpr (has_pull_v<std::tuple_element<I, tuple<Ts...>>>) {
+        get<I>(p->t).pull(
+          p->l ? &get<I>(p->l->t) : nullptr,
+          p->r ? &get<I>(p->r->t) : nullptr);
+      }
+    });
+    return p;
+  }
+
+  /* lazy operations */
+  template <class ...Ts>
+  void push(node<Ts...>* p) {
+    assert(p != nullptr);
+    for_sequence(make_index_sequence<sizeof...(Ts)>{}, [&](auto I) {
+      if constexpr (has_push_v<std::tuple_element<I, tuple<Ts...>>>) {
+        get<I>(p->t).push(
+          p->l ? &get<I>(p->l->t) : nullptr,
+          p->r ? &get<I>(p->r->t) : nullptr);
+      }
+    });
+  }
+  // returns [0, k), [k, end)
+  template <class T, class Node>
+  tuple<Node*,Node*> split(Node* p, typename T::comparable_type k) {
+    static Node* t;
+    if (!p) return {nullptr,nullptr};
+    push(p);
+
+    if constexpr (requires (T a) {
+      {T::split_remove(k, a, &a)};
+    }) {
+      if (p->l && std::get<T>(p->l->t).at_least(k)) {
+        tie(t,p->l) = split<T>(p->l, k);
+        return {t, pull(p)};
+      }
+      // comment out
+      //TODO k -= lt.cnt+1;
+      T::split_remove(k, std::get<T>(p->t), p->l ? &std::get<T>(p->l->t) : nullptr);
+    } else {
+      if (std::get<T>(p->t).at_least(k)) {
+        tie(t,p->l) = split<T>(p->l, k);
+        return {t, pull(p)};
+      }
+    }
+
+    tie(p->r,t) = split<T>(p->r, k);
+    return {pull(p), t};
+  }
+
+  template <class Node>
+  Node* merge(Node* l, Node* r) {
+    if (!l) return r;
+    if (!r) return l;
+    if (l->y > r->y) {
+      push(l);
+      l->r = merge(l->r, r);
+      return pull(l);
+    } else {
+      push(r);
+      r->l = merge(l, r->l);
+      return pull(r);
+    }
+  }
+  template <class F, class... Ts>
+  void visit(node<Ts...>* p, const F& f) {
+    if(!p) return;
+    push(p);
+    visit(p->l, f);
+    f(p);
+    visit(p->r, f);
+  }
+  /* optional, multi merge/split */
+  template<class A, class... Args>
+  A merge(A l, A r, Args... rest) {
+    return merge(merge(l,r), rest...);
+  }
+  // [0, k), [k, k2), [k3, k4), ...
+  template<class T, class Node, class... Args>
+  auto split(Node* p, typename T::comparable_type k, Args... rest) {
+    auto [l, r] = split<T>(p, rest...);
+    return std::tuple_cat(split<T>(l, k), std::make_tuple(r));
+  }
+
+  // for ordered_set operations
+  // split k => [left tree < k, right tree >= k]
+  // tested on https://codeforces.com/gym/104941/problem/F
+  template <class T = int, class Compare=less<T>>
+  struct ordering {
+    using value_type = T;
+    using comparable_type = T;
+    T v;
+    ordering& operator=(const T& t) {
+      v = t;
+      return SELF;
+    }
+    bool at_least(comparable_type k) const {
+      return v >= k;
+    }
+  };
+
+  // for segtree like operations
+  // split k => [left size k tree, right tree]
+  // tested on TODO
+  struct count {
+    using comparable_type = int;
+    int cnt=1;
+
+    bool at_least(comparable_type k) const {
+      return cnt >= k;
+    }
+
+    void pull(treap_count* l, treap_count* r) {
+      cnt = 1;
+      if (l) cnt += l->cnt;
+      if (r) cnt += r->cnt;
+    }
+
+    static void split_remove(comparable_type& k, const treap_count& /* root */, treap_count* l) {
+      k -= 1; // root
+      if (l) k -= l->cnt;
+    }
+  };
+};
+
+// try problem K: N^2 unordered pairs of vertices in tree => (x,lca(x,y),y)
+// query: what is kth largest tuple
+// lca is on path from root => x including x, number of times node occurs as lca is size of subtree
+
