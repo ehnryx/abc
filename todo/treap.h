@@ -40,13 +40,20 @@ struct node {
   }
 };
 
+template <class T, class... Ts>
+T* get_ptr(node<Ts...>* p) {
+  if (!p) return nullptr;
+  return &p->template get<T>();
+}
+
 // merge operation
 template <class... Ts>
 node<Ts...>* pull(node<Ts...>* p) {
   assert(p != nullptr);
   for_sequence(make_index_sequence<sizeof...(Ts)>{}, [&](auto I) {
-    if constexpr (has_pull_v<std::tuple_element_t<I, tuple<Ts...>>>) {
-      get<I>(p->t).pull(p->l ? &get<I>(p->l->t) : nullptr, p->r ? &get<I>(p->r->t) : nullptr);
+    using T = std::tuple_element_t<I, tuple<Ts...>>;
+    if constexpr (has_pull_v<T>) {
+      get<I>(p->t).pull(get_ptr<T>(p->l), get_ptr<T>(p->r));
     }
   });
   return p;
@@ -57,8 +64,9 @@ template <class... Ts>
 void push(node<Ts...>* p) {
   assert(p != nullptr);
   for_sequence(make_index_sequence<sizeof...(Ts)>{}, [&](auto I) {
-    if constexpr (has_push_v<std::tuple_element_t<I, tuple<Ts...>>>) {
-      get<I>(p->t).push(p->l ? &get<I>(p->l->t) : nullptr, p->r ? &get<I>(p->r->t) : nullptr);
+    using T = std::tuple_element_t<I, tuple<Ts...>>;
+    if constexpr (has_push_v<T>) {
+      get<I>(p->t).push(get_ptr<T>(p->l), get_ptr<T>(p->r));
     }
   });
 }
@@ -72,14 +80,13 @@ tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
   if constexpr (requires(T a) {
                   { T::split_remove(k, a, &a) };
                 }) {
-    if (p->l ? std::get<T>(p->l->t).at_least(k)
-             : T::empty_at_least(k)) {
+    if (T::at_least(get_ptr<T>(p->l), k)) {
       tie(t, p->l) = split<T>(p->l, k);
       return {t, pull(p)};
     }
-    T::split_remove(k, std::get<T>(p->t), p->l ? &std::get<T>(p->l->t) : nullptr);
+    T::split_remove(k, std::get<T>(p->t), get_ptr<T>(p->l));
   } else {
-    if (std::get<T>(p->t).at_least(k)) {
+    if (T::at_least(&std::get<T>(p->t), k)) {
       tie(t, p->l) = split<T>(p->l, k);
       return {t, pull(p)};
     }
@@ -135,7 +142,10 @@ struct ordering {
     v = t;
     return SELF;
   }
-  bool at_least(comparable_type k) const { return v >= k; }
+  static bool at_least(ordering* p, comparable_type k) {
+    assert(p);
+    return p->v >= k;
+  }
 };
 
 // for segtree like operations
@@ -145,9 +155,9 @@ struct count {
   using comparable_type = int;
   int cnt = 1;
 
-  bool at_least(comparable_type k) const { return cnt >= k; }
-  static bool empty_at_least(comparable_type k) {
-    return 0 >= k;
+  static bool at_least(count* p, comparable_type k) {
+    if (!p) return 0 >= k;
+    return p->cnt >= k;
   }
 
   void pull(count* l, count* r) {
