@@ -122,12 +122,31 @@ template <class A, class... Args>
 A merge(A l, A r, Args... rest) {
   return merge(merge(l, r), rest...);
 }
-// [0, k), [k, k2), [k3, k4), ...
+// [0, k), [k, k2), [k2, k3), ...
 template <class T, class Node, class... Args>
 auto split(Node* p, typename T::comparable_type k, Args... rest) {
   auto others = split<T>(p, rest...);
   tie(p, std::get<0>(others)) = split<T>(std::get<0>(others), k);
   return std::tuple_cat(std::make_tuple(p), others);
+}
+
+template <size_t I, class T, class Ret>
+void do_split(Ret&) {}
+template <size_t I, class T, class Ret, class K, class... Args>
+void do_split(Ret& ret, K k, Args... ks) {
+  if constexpr (I == sizeof...(ks) + 2) return;
+  do_split<I + 1, T>(ret, ks...);
+  tie(ret[I], ret[I + 1]) = split<T>(ret[I + 1], k);
+}
+
+// [0, k), [k, k2), [k2, k3), ...
+template <class T, class Node, class... Args>
+std::array<Node*, sizeof...(Args) + 1> split2(Node* p, Args... ks) {
+  static_assert(std::conjunction_v<std::is_same<typename T::comparable_type, Args>...>);
+  std::array<Node*, sizeof...(Args) + 1> ret{};
+  ret.back() = p;
+  do_split<0, T>(ret, ks...);
+  return ret;
 }
 
 // for ordered_set operations
