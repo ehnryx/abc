@@ -18,9 +18,11 @@
 
 #include "utility/macros.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cassert>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -77,7 +79,7 @@ struct get_traits_type {
 
 #define _MAKE_FIELD_UNIT(field_name) \
   static constexpr type field_name = 1 << ( \
-      find(traits_array.begin(), traits_array.end(), #field_name) - traits_array.begin());
+      std::find(traits_array.begin(), traits_array.end(), #field_name) - traits_array.begin());
 
 #define _MAKE_TRAITS_FIELDS(...) \
   FOR_EACH(_MAKE_FIELD_UNIT, __VA_ARGS__)

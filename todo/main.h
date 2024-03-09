@@ -55,7 +55,7 @@ struct solve_main_wrapper {
 
 auto main(int argc, char** argv) -> int {
   std::cout << std::fixed << std::setprecision(10);
-#if defined(USING_FAST_INPUT)
+#ifdef _USING_FAST_INPUT
 #if not defined(FAST_INPUT_BUFFER)
 #define FAST_INPUT_BUFFER 16384
 #endif

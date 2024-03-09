@@ -2,13 +2,13 @@
  * USAGE
  *  segment_tree<node_t> segtree(n); initializes a segment tree with >= n leaves
  *  segment_tree<node_t> segtree(begin, end); initializes a segment tree with given values
- *  Node_t is a class to be provided:
+ *  node_t is a class to be provided:
  *    STANDARD
  *      void put(args...); update at node
  *      out_t get(args...); gets the return value from node
  *      static out_t merge(out_t const& l, out_t const& r, args...); merges the return values
- *      void pull(Node_t const& l, Node_t const& r); pulls values from children
- *      void push(Node_t& l, Node_t& r); pushes lazy to l and r
+ *      void pull(node_t const& l, node_t const& r); pulls values from children
+ *      void push(node_t& l, node_t& r); pushes lazy to l and r
  *      accumulate_t<type> accumulate(accumulate_t<type>, args...); for no-push lazy
  *        (accumulating the lazy values on the path from root to node on query)
  *    BINARY SEARCH

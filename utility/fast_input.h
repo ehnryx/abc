@@ -13,7 +13,7 @@
 #include <string>
 #include <tuple>
 
-#define USING_FAST_INPUT
+#define _USING_FAST_INPUT
 
 template <size_t buf_size>
 struct fast_input {
