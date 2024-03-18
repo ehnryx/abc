@@ -6,6 +6,7 @@ import abc_compile
 import abc_find
 import abc_insert
 import abc_list
+import abc_time
 
 
 def parse_args():
@@ -20,6 +21,7 @@ def parse_args():
     abc_find.register(subparsers)
     abc_insert.register(subparsers)
     abc_list.register(subparsers)
+    abc_time.register(subparsers)
     return parser.parse_args()
 
 

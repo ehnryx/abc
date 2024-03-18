@@ -89,6 +89,7 @@ struct get_traits_type {
     static constexpr auto traits_array = _MAKE_TRAITS_ARRAY traits_fields; \
     static constexpr size_t size = traits_array.size(); \
     using type = detail::get_traits_type<size>::type; \
+    static constexpr type NONE = 0; \
     type value; \
     constexpr traits_name(type v): value(v) {} \
     constexpr explicit operator bool() const { return value; } \
@@ -107,6 +108,5 @@ struct get_traits_type {
     } \
     _MAKE_TRAITS_FIELDS traits_fields \
     FOR_EACH(_MAKE_FIELD_CUSTOM, __VA_ARGS__) \
-    static constexpr type NONE = 0; \
   }
 // clang-format on
