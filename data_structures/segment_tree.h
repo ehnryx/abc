@@ -34,7 +34,7 @@
  * STATUS [normal]
  *  tested: cf/380c,609f,501d,19d,220e,474f,339d,292e
  * STATUS [sparse]
- *  tested: cf/501d,474f,609f,292e
+ *  tested: cf/501d,474f,609f,292e; kattis/precariousstacks
  * STATUS [persistent]
  *  tested: cf/501d,474f,292e,707d,786c
  */
@@ -87,6 +87,7 @@ struct segment_tree_data {
   int lim, length;
   std::vector<node_t> data;
   auto operator[](int i) -> node_t& { return data[i]; }
+  auto root() -> node_t& { return data[1]; }
 
   static auto get_power2(int n) -> int {
     return 1 << (n <= 1 ? 0 : 32 - std::countl_zero((unsigned)n - 1));
@@ -123,6 +124,8 @@ struct segment_tree_data<node_t, traits> {
   int64_t lim, length;
   std::vector<node_t> data;
   std::vector<segment_tree_children_t> children;
+
+  auto root() -> node_t& { return data[1]; }
 
   static auto get_power2(int64_t n) -> int64_t {
     return 1ll << (n <= 1 ? 0 : 64 - std::countl_zero((uint64_t)n - 1));
@@ -172,6 +175,8 @@ struct segment_tree_data<node_t, traits> : persistent_segment_tree_data<node_t> 
   std::vector<int> version_roots;
   std::vector<node_t> data;
   std::vector<segment_tree_children_t> children;
+
+  auto root(int version) -> node_t& { return data[get_root(version)]; }
 
   static auto get_power2(int64_t n) -> int64_t {
     return 1ll << (n <= 1 ? 0 : 64 - std::countl_zero((uint64_t)n - 1));
@@ -444,7 +449,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
       if (r < l) return data[0].get(args...);
       if (l < 0 || lim <= r) throw std::invalid_argument("query range out of bounds");
     }
-    return _query(l, r, 1, 0, length - 1, args...);
+    return _query_range(l, r, 1, 0, length - 1, args...);
   }
   template <typename... Args>
   auto query_range(int version, coordinate_t l, coordinate_t r, Args const&... args)
@@ -458,10 +463,31 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
         throw std::invalid_argument("version does not exist");
       }
     }
-    return _query(l, r, this->get_root(version), 0, length - 1, args...);
+    return _query_range(l, r, this->get_root(version), 0, length - 1, args...);
+  }
+
+  template <typename acc_t, typename... Args>
+    requires(is_specialization_of<acc_t, segment_accumulate_t>)
+  auto _query_range(
+      coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
+      coordinate_t const seg_r, acc_t const& acc, Args const&... args)
+      -> return_t<acc_t, Args...> {
+    if constexpr (_has_function_accumulate<node_t, acc_t, Args...>::value) {
+      return _query_range_impl(l, r, i, seg_l, seg_r, accumulate(i, acc, args...), args...);
+    } else {
+      return _query_range_impl(
+          l, r, i, seg_l, seg_r, accumulate(i, acc, segment_length_t{seg_r - seg_l}, args...),
+          args...);
+    }
   }
   template <typename... Args>
-  auto _query(
+  auto _query_range(
+      coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
+      coordinate_t const seg_r, Args const&... args) -> return_t<Args...> {
+    return _query_range_impl(l, r, i, seg_l, seg_r, args...);
+  }
+  template <typename... Args>
+  auto _query_range_impl(
       coordinate_t const l, coordinate_t const r, int const i, coordinate_t const seg_l,
       coordinate_t const seg_r, Args const&... args) -> return_t<Args...> {
     if (l <= seg_l && seg_r <= r) return data[i].get(args...);
@@ -477,16 +503,16 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
         return data[0].get(args...);  // this can't happen right?
       }
     }
-    if (not go_right) return _query(l, r, get_left(i), seg_l, mid, args...);
-    if (not go_left) return _query(l, r, get_right(i), mid + 1, seg_r, args...);
+    if (not go_right) return _query_range(l, r, get_left(i), seg_l, mid, args...);
+    if (not go_left) return _query_range(l, r, get_right(i), mid + 1, seg_r, args...);
     if constexpr (use_pull_as_merge<Args...>) {
       return node_t().pull(
-          _query(l, r, get_left(i), seg_l, mid, args...),
-          _query(l, r, get_right(i), mid + 1, seg_r, args...));
+          _query_range(l, r, get_left(i), seg_l, mid, args...),
+          _query_range(l, r, get_right(i), mid + 1, seg_r, args...));
     } else {
       return node_t::merge(
-          _query(l, r, get_left(i), seg_l, mid, args...),
-          _query(l, r, get_right(i), mid + 1, seg_r, args...), args...);
+          _query_range(l, r, get_left(i), seg_l, mid, args...),
+          _query_range(l, r, get_right(i), mid + 1, seg_r, args...), args...);
     }
   }
 
@@ -511,6 +537,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
     }
     return _query_point(x, this->get_root(version), 0, length - 1, args...);
   }
+
   template <typename acc_t, typename... Args>
     requires(is_specialization_of<acc_t, segment_accumulate_t>)
   auto _query_point(
