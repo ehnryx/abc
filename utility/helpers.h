@@ -26,3 +26,5 @@ struct make_functional {
     return Compare()(left, right) ? left : right;
   }
 };
+
+static_assert(false, "do not use?");
