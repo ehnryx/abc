@@ -6,7 +6,7 @@
 
 // clang-format off
 MAKE_TRAITS(search_params,
-  (LOWER_BOUND, UPPER_BOUND, FIND, BY_KEY, EMPLACE),
+  (LOWER_BOUND, UPPER_BOUND, FIND, BY_KEY, EMPLACE, INSERT, GET_BOTH),
 );
 // clang-format on
 
@@ -23,30 +23,57 @@ struct search_result<params> {
 template <search_params params>
 using search_result_t = search_result<params>::type;
 
-template <typename Key>
-auto get_first(Key const& key, ...) -> decltype(auto) {
+template <search_params params, typename Key>
+  requires(params.count(params.INSERT) == 0)
+auto get_key(Key const& key, ...) -> decltype(auto) {
+  return key;
+}
+template <search_params params, typename Key>
+  requires(params.count(params.INSERT) == 1)
+auto get_key(auto const&, Key const& key, ...) -> decltype(auto) {
   return key;
 }
 
 template <search_params params, typename node_t, typename... Args>
-  requires(
-      not params.has_any(params.BY_KEY) and
-      params.count(params.LOWER_BOUND | params.UPPER_BOUND | params.FIND) == 1)
+  requires(params.count(params.INSERT) == 0)
+auto get_search(node_t const& cur, Args const&... args) -> decltype(auto) {
+  return cur.search(args...);
+}
+template <search_params params, typename node_t, typename... Args>
+  requires(params.count(params.INSERT) == 1)
+auto get_search(node_t const& cur, node_t const* data, auto const&, Args const&... args)
+    -> decltype(auto) {
+  return cur.search(data, args...);
+}
+
+constexpr auto valid_search_params(search_params params) -> bool {
+  bool valid = true;
+  valid &= params.count(params.LOWER_BOUND | params.UPPER_BOUND | params.FIND) == 1;
+  if (params.has_any(params.EMPLACE)) {
+    valid &= params.has_all(params.FIND | params.BY_KEY);
+  }
+  if (params.has_any(params.FIND)) {
+    valid &= not params.has_any(params.INSERT | params.GET_BOTH);
+  }
+  return valid;
+}
+
+template <search_params params, typename node_t, typename... Args>
+  requires(valid_search_params(params) and not params.has_any(params.BY_KEY))
 inline auto search(node_t const& cur, Args const&... args) -> search_result_t<params> {
   if constexpr (params.has_all(params.UPPER_BOUND)) {
-    return cur.search(args...) < 0;
+    return get_search<params>(cur, args...) < 0;
   } else if constexpr (params.has_all(params.LOWER_BOUND)) {
-    return cur.search(args...) <= 0;
+    return get_search<params>(cur, args...) <= 0;
   } else {
-    return cur.search(args...);
+    return get_search<params>(cur, args...);
   }
 }
 
-template <search_params params, typename node_t, typename Key>
-  requires(
-      params.has_any(params.BY_KEY) and
-      params.count(params.LOWER_BOUND | params.UPPER_BOUND | params.FIND) == 1)
-inline auto search(node_t const& cur, Key const& key) -> search_result_t<params> {
+template <search_params params, typename node_t, typename... Args>
+  requires(valid_search_params(params) and params.has_any(params.BY_KEY))
+inline auto search(node_t const& cur, Args const&... args) -> search_result_t<params> {
+  auto const& key = get_key<params>(args...);
   if constexpr (params.has_all(params.UPPER_BOUND)) {
     return key < cur.key;
   } else if constexpr (params.has_all(params.LOWER_BOUND)) {
@@ -55,4 +82,28 @@ inline auto search(node_t const& cur, Key const& key) -> search_result_t<params>
     return key < cur.key ? -1 : cur.key < key ? 1 : 0;
   }
 }
+
+#define _MAKE_SPLAY_DESCEND(direction) \
+  template <search_params params, typename node_t, typename... Args> \
+    requires( \
+        valid_search_params(params) and not params.has_any(params.BY_KEY) and \
+        not params.has_any(params.INSERT)) \
+  inline auto descend_##direction(node_t const& cur, node_t const* data, Args&... args) { \
+    if constexpr (requires { cur.descend_##direction(data, args...); }) { \
+      cur.descend_##direction(data, args...); \
+    } \
+  } \
+  template <search_params params, typename node_t, typename... Args> \
+    requires( \
+        valid_search_params(params) and not params.has_any(params.BY_KEY) and \
+        params.has_any(params.INSERT)) \
+  inline auto descend_##direction( \
+      node_t const& cur, node_t const* data, auto const&, Args&... args) { \
+    if constexpr (requires { cur.descend_##direction(data, args...); }) { \
+      cur.descend_##direction(data, args...); \
+    } \
+  }
+_MAKE_SPLAY_DESCEND(left)
+_MAKE_SPLAY_DESCEND(right)
+#undef _MAKE_SPLAY_DESCEND
 }  // namespace binary_search_details

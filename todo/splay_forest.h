@@ -6,8 +6,14 @@
  *  O(logN) per operation amortized
  *  N = |splay tree|
  * STATUS
- *  untested: cf/104941f
- *  treap contest: 102787
+ *  [pull/search]
+ *    tested: boj/7480,16586,16994,17607
+ *  [push]
+ *    tested: kattis/precariousstacks; boj/3444,9990
+ *  [map]
+ *    tested: cf/104941f
+ *  [TODO]
+ *    untested: cf/102787
  */
 #pragma once
 
@@ -25,21 +31,44 @@ MAKE_TRAITS(splay_traits,
 struct splay_index {};
 
 struct splay_node_pointer {
-  int32_t idx;
-  operator int32_t() const { return idx; }
+  uint32_t idx;
+  operator uint32_t() const { return idx; }
 };
 
-template <typename, splay_traits>
-struct splay_node_data {
-  splay_node_pointer parent;
+namespace splay_details {
+template <typename derived_t>
+struct push_pull_dispatcher {
+  static constexpr bool has_pull_user = requires(derived_t x) { x.pull(&x); };
+  static constexpr bool has_pull_size = requires(derived_t x) { x._pull_splay_node_size(&x); };
+  static constexpr bool has_pull = has_pull_user or has_pull_size;
+  auto _pull_dispatcher(derived_t const* data) -> void {
+    if constexpr (has_pull_user) {
+      static_cast<derived_t*>(this)->pull(data);
+    }
+    if constexpr (has_pull_size) {
+      static_cast<derived_t*>(this)->_pull_splay_node_size(data);
+    }
+  }
+  static constexpr bool has_push_user = requires(derived_t x) { x.push(&x); };
+  static constexpr bool has_push = has_push_user;
+  auto _push_dispatcher(derived_t* data) -> void {
+    if constexpr (has_push_user) {
+      static_cast<derived_t*>(this)->push(data);
+    }
+  }
+};
+
+template <typename derived_t, splay_traits>
+struct splay_node_data : push_pull_dispatcher<derived_t> {
+  splay_node_pointer parent = {0};
   splay_node_pointer left = {0};
   splay_node_pointer right = {0};
 };
 
 template <typename derived_t, splay_traits traits>
   requires(traits.has_all(traits.ORDER_STATS))
-struct splay_node_data<derived_t, traits> {
-  splay_node_pointer parent;
+struct splay_node_data<derived_t, traits> : push_pull_dispatcher<derived_t> {
+  splay_node_pointer parent = {0};
   splay_node_pointer left = {0};
   splay_node_pointer right = {0};
   int32_t size = 1;
@@ -57,16 +86,19 @@ struct splay_node_data<derived_t, traits> {
     index -= data[left].size + 1;
   }
 };
+}  // namespace splay_details
 
 template <typename derived_t, typename Key_t, splay_traits traits = splay_traits::NONE>
-struct splay_node_base : splay_node_data<derived_t, traits> {
+struct splay_node_base : splay_details::splay_node_data<derived_t, traits> {
   using key_t = Key_t;
   key_t key;
-  splay_node_base(key_t&& k) : key(std::move(k)) {}
+  template <typename Key>
+  splay_node_base(Key&& k) : key(std::move(k)) {}
 };
 
 template <typename derived_t, splay_traits traits>
-struct splay_node_base<derived_t, void, traits> : splay_node_data<derived_t, traits> {
+struct splay_node_base<derived_t, void, traits>
+    : splay_details::splay_node_data<derived_t, traits> {
   using key_t = void;
   splay_node_base() = default;
 };
@@ -77,131 +109,121 @@ struct splay_forest : Alloc {
   using node_t = Node_t;
   using pointer_t = splay_node_pointer;
 
-  //auto debug() {
-  //  cout << "\n------------------------\n";
-  //  for (int I = _buffer_size; I >= 0; I--) {
-  //    pointer_t i = {I};
-  //    cout << i << " [" << get(i).value << "] : (" << get(i).parent << " " << get(i).left << " "
-  //         << get(i).right << ") " << get(i).size << "\n";
-  //  }
-  //  cout << "------------------------\n" << endl;
-  //}
-
   node_t* data;
-  int32_t const _buffer_size;
-  int32_t _next_data;
-  splay_forest(int32_t n) : data(Alloc::allocate(n + 1)), _buffer_size(n), _next_data(n) {
+  uint32_t const _buffer_size;
+  uint32_t _next_data;
+  /// n should be less than std::numeric_limits<uint32_t>::max()
+  splay_forest(uint32_t n) : data(Alloc::allocate(n + 1)), _buffer_size(n), _next_data(n) {
     if constexpr (requires { node_t(); }) {
       std::construct_at(data);
     } else {
       data->parent = data->left = data->right = {0};
-      if constexpr (requires { data->size; }) {
-        data->size = 0;
-      }
+    }
+    if constexpr (requires { data->size; }) {
+      data->size = 0;
     }
   }
   ~splay_forest() { Alloc::deallocate(data, _buffer_size + 1); }
 
-  auto get(pointer_t x) -> node_t& { return data[x]; }
-  auto get(pointer_t x) const -> node_t const& { return data[x]; }
+  inline auto get(pointer_t x) -> node_t& { return data[x]; }
+  inline auto get(pointer_t x) const -> node_t const& { return data[x]; }
+  inline auto operator[](pointer_t x) -> node_t& { return get(x); }
+  inline auto operator[](pointer_t x) const -> node_t const& { return get(x); }
 
   template <typename... Args>
-  auto new_node(pointer_t parent, Args&&... args) -> pointer_t {
+  auto new_node(Args&&... args) -> pointer_t {
     std::construct_at(data + _next_data, std::forward<Args>(args)...);
-    data[_next_data].parent = parent;
-    return {_next_data--};
+    return pointer_t{_next_data--};
+  }
+  template <search_params params, typename... Args>
+    requires(not params.has_any(params.INSERT))
+  auto _get_node(Args&&... args) -> pointer_t {
+    return new_node(std::forward<Args>(args)...);
+  }
+  template <search_params params>
+    requires(params.has_any(params.INSERT))
+  auto _get_node(pointer_t x, ...) -> pointer_t {
+    return x;
   }
 
   /// assumes x is not NULL
   auto pull(pointer_t x) -> void {
-    if constexpr (requires { data[x]._pull_splay_node_size(data); }) {
-      data[x]._pull_splay_node_size(data);
-    }
-    if constexpr (requires { data[x].pull(data); }) {
-      data[x].pull(data);
+    if constexpr (node_t::has_pull) {
+      get(x)._pull_dispatcher(data);
     }
   }
-
   /// assumes x is not NULL
-  auto pull_to(pointer_t x, pointer_t nil) -> void {
-    static constexpr bool has_pull_size = requires { data[x]._pull_splay_node_size(data); };
-    static constexpr bool has_pull = requires { data[x].pull(data); };
-    if constexpr (has_pull_size or has_pull) {
-      for (; x != nil; x = data[x].parent) {
-        if constexpr (has_pull_size) {
-          data[x]._pull_splay_node_size(data);
-        }
-        if constexpr (has_pull) {
-          data[x].pull(data);
-        }
+  auto pull_from(pointer_t x) -> void {
+    if constexpr (node_t::has_pull) {
+      for (; x != 0; x = get(x).parent) {
+        pull(x);
       }
     }
   }
-
   /// assumes x is not NULL
   auto push(pointer_t x) -> void {
-    if constexpr (requires { data[x].push(data); }) {
-      data[x].push(data);
+    if constexpr (node_t::has_push) {
+      get(x)._push_dispatcher(data);
+    }
+  }
+  /// assumes x is not NULL. x will get pushed
+  auto push_to(pointer_t x) -> void {
+    if constexpr (node_t::has_push) {
+      if (get(x).parent != 0) push_to(get(x).parent);
+      push(x);
     }
   }
 
   /// assumes x is not NULL
   auto erase(pointer_t rem) -> pointer_t {
-    _splay(rem);
-    auto before = data[rem].left;
-    auto after = data[rem].right;
+    return _erase_root(splay(rem));  // push to + splay + erase root
+  }
+  /// assumes x is root, and not NULL
+  template <search_params params, typename... Args>
+  auto find_erase(pointer_t x, Args&&... args) -> pointer_t {
+    auto [found, root] = _search<params>(x, std::forward<Args>(args)...);
+    if (found == 0) return root;
+    return _erase_root(found);
+  }
+  /// assumes x is root and not NULL
+  auto _erase_root(pointer_t rem) -> pointer_t {
+    auto before = get(rem).left;
+    auto after = get(rem).right;
     // destroy rem ?
     if (before == 0) {
-      if (after != 0) data[after].parent = 0;
+      if (after != 0) get(after).parent = {0};
       return after;
     } else {
-      data[before].parent = 0;
+      get(before).parent = {0};
       if (after != 0) {
-        data[after].parent = 0;
-        return append(before, after);
+        get(after).parent = {0};
+        return _append(before, after);
       } else {
         return before;
       }
     }
   }
 
-  template <typename... Args>
-  auto descend_left(pointer_t x, Args&&... args) -> void {
-    if constexpr (requires { data[x].descend_left(data, args...); }) {
-      data[x].descend_left(data, args...);
-    }
-  }
+#define _SPLAY_UPDATE_LEFT(X) \
+  do { \
+    get(X).parent = left_parent; \
+    if (left_root == 0) left_root = X; \
+    else get(left_parent).right = X; \
+    left_parent = X; \
+  } while (false);
 
-  template <typename... Args>
-  auto descend_right(pointer_t x, Args&&... args) -> void {
-    if constexpr (requires { data[x].descend_right(data, args...); }) {
-      data[x].descend_right(data, args...);
-    }
-  }
+#define _SPLAY_UPDATE_RIGHT(X) \
+  do { \
+    get(X).parent = right_parent; \
+    if (right_root == 0) right_root = X; \
+    else get(right_parent).left = X; \
+    right_parent = X; \
+  } while (false)
 
-  /// assumes x is a root, and not NULL
-  template <typename... Args>
-  auto try_emplace(pointer_t x, Args&&... args) -> pointer_t {
-    auto const [found, root] =
-        _search<search_params::FIND | search_params::BY_KEY | search_params::EMPLACE>(
-            x, std::forward<Args>(args)...);
-    return found;
-  }
-
-  auto _update_left(pointer_t p, pointer_t add) -> pointer_t {
-    data[add].parent = p;
-    if (p != 0) data[p].right = add;
-    return add;
-  }
-
-  auto _update_right(pointer_t p, pointer_t add) -> pointer_t {
-    data[add].parent = p;
-    if (p != 0) data[p].left = add;
-    return add;
-  }
-
-  /// assumes x is a root, and not NULL.
-  /// returns (lower_bound, root)
+  /// assumes x is root, and not NULL.
+  /// returns (lower_bound, root) if search_params::GET_BOTH is not set
+  /// returns (left_node, right_node) if search_params::GET_BOTH is set
+  ///   right_node is root unless it is null, then left_node is root
   template <search_params params, typename... Args>
   auto _search(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
     pointer_t left_root = {0};
@@ -210,14 +232,14 @@ struct splay_forest : Alloc {
     pointer_t right_parent = {0};
     int_fast32_t parity = 0;
     int_fast32_t went_left = 0;
-    pointer_t result = {0};
-    for (bool done = false; not done;) {
+    bool done = false;
+    while (not done) {
+      push(x);  // push before descending
       auto const search_dir = [&] {
         if constexpr (params.has_any(params.BY_KEY)) {
-          return binary_search_details::search<params>(
-              data[x], binary_search_details::get_first(args...));
+          return binary_search_details::search<params>(get(x), args...);
         } else {
-          return binary_search_details::search<params>(data[x], data, args...);
+          return binary_search_details::search<params>(get(x), data, args...);
         }
       }();
       bool const go_left = [&] {
@@ -226,141 +248,193 @@ struct splay_forest : Alloc {
       }();
       bool const go_right = [&] {
         if constexpr (params.has_any(params.FIND)) return search_dir > 0;
-        else return not search_dir;
+        else return not go_left;
       }();
       if (go_left) {
-        result = x;  // update result
-        if (data[x].left == 0) {
-          if constexpr (not params.has_any(params.EMPLACE)) {
-            break;
+        if (get(x).left == 0) {
+          done = true;
+          if constexpr (params.has_any(params.EMPLACE | params.INSERT)) {
+            get(x).left = _get_node<params>(std::forward<Args>(args)...);
+            get(get(x).left).parent = x;
           } else {
-            data[x].left = result = new_node(x, std::forward<Args>(args)...);
-            done = true;
+            break;
           }
         } else {
-          descend_left(x, args...);
+          if constexpr (not params.has_any(params.BY_KEY)) {
+            binary_search_details::descend_left<params>(get(x), data, args...);
+          }
         }
         parity ^= 1;
         went_left = went_left << 1 | 1;
-        x = data[x].left;
+        x = get(x).left;
       } else if (go_right) {
-        if (data[x].right == 0) {
-          if constexpr (not params.has_any(params.EMPLACE)) {
-            break;
+        if (get(x).right == 0) {
+          done = true;
+          if constexpr (params.has_any(params.EMPLACE | params.INSERT)) {
+            get(x).right = _get_node<params>(std::forward<Args>(args)...);
+            get(get(x).right).parent = x;
           } else {
-            data[x].right = result = new_node(x, std::forward<Args>(args)...);
-            done = true;
+            if constexpr (not params.has_any(params.FIND)) done = false;
+            break;
           }
         } else {
-          descend_right(x, args...);
+          if constexpr (not params.has_any(params.BY_KEY)) {
+            binary_search_details::descend_right<params>(get(x), data, args...);
+          }
         }
         parity ^= 1;
         went_left = went_left << 1;
-        x = data[x].right;
+        x = get(x).right;
       } else {
-        result = x;  // update result
         break;
       }
       // top down splay update
       if (parity == 0) {
+        pointer_t const p = get(x).parent;
+        pointer_t const pp = get(p).parent;
         if ((went_left & 1) == went_left >> 1) {
-          _rotate(data[x].parent, data[data[x].parent].parent, went_left);
-          if (went_left) {
-            right_parent = _update_right(right_parent, data[x].parent);
-            if (right_root == 0) right_root = right_parent;
-          } else {
-            left_parent = _update_left(left_parent, data[x].parent);
-            if (left_root == 0) left_root = left_parent;
-          }
+          _rotate(p, pp, went_left);
+          if (went_left) _SPLAY_UPDATE_RIGHT(p);
+          else _SPLAY_UPDATE_LEFT(p);
         } else {
           if (went_left & 1) {
-            left_parent = _update_left(left_parent, data[data[x].parent].parent);
-            right_parent = _update_right(right_parent, data[x].parent);
+            _SPLAY_UPDATE_LEFT(pp);
+            _SPLAY_UPDATE_RIGHT(p);
           } else {
-            right_parent = _update_right(right_parent, data[data[x].parent].parent);
-            left_parent = _update_left(left_parent, data[x].parent);
+            _SPLAY_UPDATE_RIGHT(pp);
+            _SPLAY_UPDATE_LEFT(p);
           }
-          if (left_root == 0) left_root = left_parent;
-          if (right_root == 0) right_root = right_parent;
         }
         went_left = 0;
       }
     }
     if (parity) {
-      if (went_left) {
-        right_parent = _update_right(right_parent, data[x].parent);
-        if (right_root == 0) right_root = right_parent;
-      } else {
-        left_parent = _update_left(left_parent, data[x].parent);
-        if (left_root == 0) left_root = left_parent;
-      }
+      pointer_t const p = get(x).parent;
+      if (went_left) _SPLAY_UPDATE_RIGHT(p);
+      else _SPLAY_UPDATE_LEFT(p);
     }
     if (left_root != 0) {
-      data[left_parent].right = data[x].left;
-      if (data[x].left != 0) data[data[x].left].parent = left_parent;
-      data[x].left = left_root;
-      data[left_root].parent = x;
-      pull_to(left_parent, x);
+      get(left_parent).right = get(x).left;
+      if (get(left_parent).right != 0) get(get(left_parent).right).parent = left_parent;
+      pull_from(left_parent);
+      get(x).left = left_root;
+      get(left_root).parent = x;
     }
     if (right_root != 0) {
-      data[right_parent].left = data[x].right;
-      if (data[x].right != 0) data[data[x].right].parent = right_parent;
-      data[x].right = right_root;
-      data[right_root].parent = x;
-      pull_to(right_parent, x);
+      get(right_parent).left = get(x).right;
+      if (get(right_parent).left != 0) get(get(right_parent).left).parent = right_parent;
+      pull_from(right_parent);
+      get(x).right = right_root;
+      get(right_root).parent = x;
     }
-    data[x].parent = {0};  // x is now root
+    get(x).parent = {0};  // x is now root
     pull(x);
-    return std::pair(result, x);
+    auto const result = [&] {
+      if constexpr (params.has_any(params.FIND) and not params.has_any(params.EMPLACE)) {
+        if (done) return pointer_t{0};
+      }
+      if constexpr (params.has_any(params.FIND | params.EMPLACE | params.INSERT)) {
+        return x;
+      } else {
+        return done ? x : right_parent;
+      }
+    }();
+    if constexpr (params.has_any(params.GET_BOTH)) {
+      if (result == x) {
+        return std::pair(left_parent, x);
+      } else {
+        if (result != 0) _splay(result);
+        return std::pair(x, result);
+      }
+    } else {
+      return std::pair(result, x);
+    }
   }
 
-  /// assumes x is a root, and not NULL
-  template <typename... Args>
-  auto split_before(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
-    auto const [after, root] =
-        _search<search_params::LOWER_BOUND>(x, std::forward<Args>(args)...);
+#undef _SPLAY_UPDATE_LEFT
+#undef _SPLAY_UPDATE_RIGHT
+
+  /// assumes x is root or NULL
+  /// returns [left_root, right_root]
+  template <search_params params, typename... Args>
+  auto split(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
+    if (x == 0) return std::pair(x, x);
+    return _split<params>(x, std::forward<Args>(args)...);
+  }
+  /// assumes x is root, and not NULL
+  /// returns [left_root, right_root]
+  template <search_params params, typename... Args>
+  auto _split(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
+    auto const [after, root] = _search<params>(x, std::forward<Args>(args)...);
     if (after == 0) return std::pair(root, pointer_t{0});
-    _splay(after);  // after is now root
-    pointer_t before = data[after].left;
-    data[after].left = {0};
-    if (before != 0) data[before].parent = {0};
-    pull(after);
-    return std::pair(before, after);
+    _splay(after);  // after is now root. should be consistent with append
+    return std::pair(_split_before_root(after), after);
   }
-
-  /// assumes left and right are roots, and not NULL
-  auto append(pointer_t before, pointer_t after) -> pointer_t {
-    before = _splay(_rightmost(before));
-    data[before].right = after;
-    data[after].parent = before;
-    pull(before);
+  /// assumes x is root, and not NULL
+  /// returns left_root. x remains right_root
+  auto _split_before_root(pointer_t after) -> pointer_t {
+    pointer_t before = get(after).left;
+    get(after).left = {0};
+    if (before != 0) get(before).parent = {0};
+    pull(after);
     return before;
   }
 
-  /// assumes x is a root, and not NULL. does not splay
-  auto _rightmost(pointer_t x) -> pointer_t {
-    while (data[x].right != 0) {
-      x = data[x].right;
-    }
-    return x;
+  /// assumes left and right are roots or NULL
+  auto append(pointer_t before, pointer_t after) -> pointer_t {
+    if (before == 0) return after;
+    if (after == 0) return before;
+    return _append(before, after);
+  }
+  /// assumes left and right are roots, and not NULL
+  auto _append(pointer_t before, pointer_t after) -> pointer_t {
+    after = _splay(_leftmost(after));  // after is root. should be consistent with split
+    get(after).left = before;
+    get(before).parent = after;
+    pull(after);
+    return after;
   }
 
   /// assumes x is not NULL. does not splay
+  auto _rightmost(pointer_t x) -> pointer_t {
+    while (get(x).right != 0) {
+      push(x);
+      x = get(x).right;
+    }
+    push(x);
+    return x;
+  }
+  /// assumes x is not NULL. does not splay. x will get pushed
+  auto _leftmost(pointer_t x) -> pointer_t {
+    while (get(x).left != 0) {
+      push(x);
+      x = get(x).left;
+    }
+    push(x);
+    return x;
+  }
+
+  /// assumes x is not NULL. does not splay. x will get pushed
   auto find_root(pointer_t x) -> pointer_t {
-    while (data[x].parent != 0) {
-      x = data[x].parent;
+    while (get(x).parent != 0) {
+      x = get(x).parent;
     }
     return x;
   }
 
   /// assumes x is not NULL
-  inline auto _splay(pointer_t const x, pointer_t const to = {0}) -> pointer_t {
-    pointer_t p = data[x].parent;
-    bool x_left = data[p].left == x;
-    while (p != to and data[p].parent != to) {
-      pointer_t const pp = data[p].parent;
-      bool const p_left = data[pp].left == p;
-      pointer_t const next_p = data[pp].parent;
+  auto splay(pointer_t x) -> pointer_t {
+    push_to(x);
+    return _splay(x);
+  }
+  /// assumes x is not NULL, assumes no lazy on path from root to x (inclusive)
+  inline auto _splay(pointer_t const x) -> pointer_t {
+    pointer_t p = get(x).parent;
+    bool x_left = get(p).left == x;
+    while (p != 0 and get(p).parent != 0) {
+      pointer_t const pp = get(p).parent;
+      bool const p_left = get(pp).left == p;
+      pointer_t const next_p = get(pp).parent;
       if (x_left == p_left) {
         _rotate(p, pp, p_left);
         _rotate(x, p, x_left);
@@ -368,18 +442,13 @@ struct splay_forest : Alloc {
         _rotate(x, p, x_left);
         _rotate(x, pp, p_left);
       }
-      x_left = data[next_p].left == pp;
+      x_left = get(next_p).left == pp;
       p = next_p;
     }
-    if (p != to) {
+    if (p != 0) {
       _rotate(x, p, x_left);
-      x_left = data[to].left == p;
     }
-    data[x].parent = to;
-    if (to != 0) {
-      if (x_left) data[to].left = x;
-      else data[to].right = x;
-    }
+    get(x).parent = {0};
     pull(x);
     return x;
   }
@@ -388,16 +457,25 @@ struct splay_forest : Alloc {
   /// is_left is true iff x is the left child of p
   /// _rotate does not connect x to its new parent (ie. the old parent of p)
   inline auto _rotate(pointer_t const x, pointer_t const p, bool const is_left) -> void {
-    data[p].parent = x;
+    get(p).parent = x;
     if (is_left) {
-      data[p].left = data[x].right;
-      if (data[p].left != 0) data[data[p].left].parent = p;
-      data[x].right = p;
+      get(p).left = get(x).right;
+      if (get(p).left != 0) get(get(p).left).parent = p;
+      get(x).right = p;
     } else {
-      data[p].right = data[x].left;
-      if (data[p].right != 0) data[data[p].right].parent = p;
-      data[x].left = p;
+      get(p).right = get(x).left;
+      if (get(p).right != 0) get(get(p).right).parent = p;
+      get(x).left = p;
     }
     pull(p);
   }
+
+  template <typename Function>
+  auto visit(pointer_t x, Function&& f) -> void {
+    if (x == 0) return;
+    push(x);
+    visit(get(x).left, f);
+    f(get(x));
+    visit(get(x).right, std::move(f));
+  };
 };
