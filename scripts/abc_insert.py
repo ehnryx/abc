@@ -42,6 +42,10 @@ def get_contents(args) -> Set[Path]:
 def main(args):
     assert args.input.is_file(), f"input file {args.input} does not exist"
 
+    if args.no_defines:
+        assert len(args.defines) == 0, "--defines cannot be used with --no-defines"
+        args.defines = None
+
     contents = get_contents(args)
     inserted = set()
 
@@ -88,11 +92,12 @@ def register(subs):
     )
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", "-o", type=Path, default=Path("to_submit.cpp"))
+    parser.add_argument("--no-defines", action="store_true")
     parser.add_argument(
         "--defines",
         "-d",
         nargs="*",
-        default=None,
+        default=[],  # use defines by default
         help="respect the preprocessor and use defines (-D)",
     )
     parser.set_defaults(func=main)

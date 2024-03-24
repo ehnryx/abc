@@ -2,6 +2,7 @@
  * Valid defines:
  *  PRINT_TIMING -- print timing after each SOLVE()
  *  MULTI_TEST -- multiple tests (`int T` is the first token of input)
+ *  MULTI_UNTIL -- multiple tests, run until SOLVE returns false
  *  PRINT_CASE -- same as MULTI_TEST except also print "Case PRINT_CASE{i}: ans_i"
  *  FAST_INPUT -- use fast input
  *  FAST_INPUT_BUFFER -- size of buffer for fast_input. default=16384
@@ -13,21 +14,29 @@
 #endif
 #include <iomanip>
 #include <iostream>
+#include <limits>
 
 template <typename input_t>
 struct solve_main_wrapper {
+#if defined(MULTI_UNTIL)
+#define _SOLVE_MAIN_LOOP_CONDITION true
+  using return_t = bool;
+#else
+#define _SOLVE_MAIN_LOOP_CONDITION testnum <= test_cases
+  using return_t = void;
+#endif
   input_t& cin;
   solve_main_wrapper(input_t& _cin, int argc, char** argv) : cin(_cin) {
     (void)argc;
     (void)argv;
   }
-  auto solve_main(int testnum) -> void;
+  auto solve_main(size_t testnum) -> return_t;
   auto solve_all() -> int {
-    int test_cases = 1;
+    [[maybe_unused]] size_t test_cases = 1;
 #if defined(MULTI_TEST) or defined(PRINT_CASE)
     cin >> test_cases;
 #endif
-    for (int testnum = 1; testnum <= test_cases; testnum++) {
+    for (size_t testnum = 1; _SOLVE_MAIN_LOOP_CONDITION; testnum++) {
 #define MAKE_STRING_IMPL(STRING) #STRING
 #define MAKE_STRING(STRING) MAKE_STRING_IMPL(STRING)
 #if defined(PRINT_CASE)
@@ -38,7 +47,11 @@ struct solve_main_wrapper {
 #if defined(PRINT_TIMING)
       auto start_time = std::chrono::high_resolution_clock::now();
 #endif
+#if defined(MULTI_UNTIL)
+      if (not solve_main(testnum)) break;
+#else
       solve_main(testnum);
+#endif
 #if defined(PRINT_TIMING)
       auto duration = std::chrono::high_resolution_clock::now() - start_time;
       using namespace std::chrono;
@@ -70,7 +83,7 @@ auto main(int argc, char** argv) -> int {
 
 #define SOLVE() \
   template <typename input_t> \
-  auto solve_main_wrapper<input_t>::solve_main([[maybe_unused]] int testnum) -> void
+  auto solve_main_wrapper<input_t>::solve_main([[maybe_unused]] size_t testnum) -> return_t
 
 using ll = long long;
 constexpr char nl = '\n';
