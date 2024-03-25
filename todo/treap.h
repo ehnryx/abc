@@ -9,6 +9,13 @@
 //   ordering
 // - https://codeforces.com/gym/102787/problem/A
 //   count
+#pragma once
+
+#include <cstdlib>
+#include <functional>
+#include <tuple>
+#include <utility>
+
 namespace treap {
 
 // tuple index helper
@@ -19,13 +26,13 @@ constexpr void for_sequence(std::integer_sequence<T, S...>, F&& f) {
 
 template <typename T>
 concept has_pull_v = requires(T a, T* p) {
-                       { a.pull(p, p) };
-                     };
+  { a.pull(p, p) };
+};
 
 template <typename T>
 concept has_push_v = requires(T a, T* p) {
-                       { a.push(p, p) };
-                     };
+  { a.push(p, p) };
+};
 
 template <class T>
 struct with_parent {
@@ -38,13 +45,13 @@ template <bool has_parent, class... Ts>
 struct node : with_parent<std::conditional_t<has_parent, node<has_parent, Ts...>, void>> {
   // TODO assert Ts... are unique?
   template <size_t I>
-  using element_t = std::tuple_element_t<I, tuple<Ts...>>;
+  using element_t = std::tuple_element_t<I, std::tuple<Ts...>>;
   constexpr static size_t size_v = sizeof...(Ts);
   constexpr static bool has_parent_v = has_parent;
   node* l = nullptr;
   node* r = nullptr;
-  int y = rand();
-  tuple<Ts...> t = {};
+  int y = std::rand();
+  std::tuple<Ts...> t = {};
   template <class T>
   T& get() {
     return std::get<T>(t);
@@ -81,7 +88,7 @@ auto* get_ptr(Node* p) {
 template <class Node>
 Node* pull(Node* p) {
   assert(p != nullptr);
-  for_sequence(make_index_sequence<Node::size_v>{}, [&](auto I) {
+  for_sequence(std::make_index_sequence<Node::size_v>{}, [&](auto I) {
     using T = typename Node::element_t<I>;
     if constexpr (has_pull_v<T>) {
       get<I>(p->t).pull(get_ptr<I>(p->l), get_ptr<I>(p->r));
@@ -94,7 +101,7 @@ Node* pull(Node* p) {
 template <class Node>
 void push(Node* p) {
   assert(p != nullptr);
-  for_sequence(make_index_sequence<Node::size_v>{}, [&](auto I) {
+  for_sequence(std::make_index_sequence<Node::size_v>{}, [&](auto I) {
     using T = typename Node::element_t<I>;
     if constexpr (has_push_v<T>) {
       get<I>(p->t).push(get_ptr<I>(p->l), get_ptr<I>(p->r));
@@ -105,7 +112,7 @@ void push(Node* p) {
 // returns {L, R : elems >= k}  (lower_bound)
 //         {L, R : elems >  k}  (upper_bound)
 template <class T, bool upper_bound = false, class Node>
-tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
+std::tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
   static Node* t;
   if (!p) return {nullptr, nullptr};
   push(p);
@@ -114,7 +121,7 @@ tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
                 }) {
     if (upper_bound ? T::compare(get_ptr<T>(p->l), k) > 0
                     : T::compare(get_ptr<T>(p->l), k) >= 0) {
-      tie(t, p->l) = split<T, upper_bound>(p->l, k);
+      std::tie(t, p->l) = split<T, upper_bound>(p->l, k);
       if constexpr (Node::has_parent_v) {
         if (t) t->p = nullptr;
         if (p->l) p->l->p = p;
@@ -125,7 +132,7 @@ tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
   } else {
     if (upper_bound ? T::compare(&std::get<T>(p->t), k) > 0
                     : T::compare(&std::get<T>(p->t), k) >= 0) {
-      tie(t, p->l) = split<T, upper_bound>(p->l, k);
+      std::tie(t, p->l) = split<T, upper_bound>(p->l, k);
       if constexpr (Node::has_parent_v) {
         if (t) t->p = nullptr;
         if (p->l) p->l->p = p;
@@ -133,7 +140,7 @@ tuple<Node*, Node*> split(Node* p, typename T::comparable_type k) {
       return {t, pull(p)};
     }
   }
-  tie(p->r, t) = split<T, upper_bound>(p->r, k);
+  std::tie(p->r, t) = split<T, upper_bound>(p->r, k);
   if constexpr (Node::has_parent_v) {
     if (t) t->p = nullptr;
     if (p->r) p->r->p = p;
@@ -178,6 +185,26 @@ Node* onion(Node* t1, Node* t2) {
   return merge(onion<T>(t1l, l), t1, onion<T>(t1r, r));
 }
 
+template <typename Node>
+Node* leftmost(Node* u) {
+  if (u != nullptr) {
+    while (u->l != nullptr) {
+      u = u->l;
+    }
+  }
+  return u;
+}
+
+template <typename Node>
+Node* rightmost(Node* u) {
+  if (u != nullptr) {
+    while (u->r != nullptr) {
+      u = u->r;
+    }
+  }
+  return u;
+}
+
 template <class F, class Node>
 void visit(Node* p, const F& f) {
   if (!p) return;
@@ -201,7 +228,7 @@ template <size_t I, class T, class Ret, class K, class... Args>
 void multi_split_helper(Ret& ret, K k, Args... ks) {
   if constexpr (I == sizeof...(ks) + 2) return;
   multi_split_helper<I + 1, T>(ret, ks...);
-  tie(ret[I], ret[I + 1]) = split<T>(ret[I + 1], k);
+  std::tie(ret[I], ret[I + 1]) = split<T>(ret[I + 1], k);
 }
 }  // namespace detail
 
@@ -228,21 +255,21 @@ std::tuple<Node*, Node*> split_upper_bound(Node* p, typename T::comparable_type 
 template <class T, class Node>
 std::array<Node*, 3> split_equal_range(Node* p, typename T::comparable_type k) {
   std::array<Node*, 3> ret;
-  tie(p, ret[2]) = split_upper_bound<T>(p, k);
-  tie(ret[0], ret[1]) = split_lower_bound<T>(p, k);
+  std::tie(p, ret[2]) = split_upper_bound<T>(p, k);
+  std::tie(ret[0], ret[1]) = split_lower_bound<T>(p, k);
   return ret;
 }
 
 // for ordered_set operations
 // split k => [left tree < k, right tree >= k]
-template <class T = int, class Compare = less<T>>
+template <class T = int, class Compare = std::less<T>>
 struct ordering {
   using value_type = T;
   using comparable_type = T;
   T v;
   ordering& operator=(const T& t) {
     v = t;
-    return SELF;
+    return *this;
   }
   static auto compare(ordering* p, comparable_type k) {
     assert(p);
@@ -273,7 +300,7 @@ struct count {
   }
 };
 
-template <class Value = int, class Sum = ll>
+template <class Value = int, class Sum = long long>
 struct sum_type {
   Value val = 0;
   Sum sum = 0;
