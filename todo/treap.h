@@ -189,6 +189,7 @@ template <typename Node>
 Node* leftmost(Node* u) {
   if (u != nullptr) {
     while (u->l != nullptr) {
+      push(u);
       u = u->l;
     }
   }
@@ -199,6 +200,7 @@ template <typename Node>
 Node* rightmost(Node* u) {
   if (u != nullptr) {
     while (u->r != nullptr) {
+      push(u);
       u = u->r;
     }
   }
