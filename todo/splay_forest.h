@@ -221,9 +221,7 @@ struct splay_forest : Alloc {
   } while (false)
 
   /// assumes x is root, and not NULL.
-  /// returns (lower_bound, root) if search_params::GET_BOTH is not set
-  /// returns (left_node, right_node) if search_params::GET_BOTH is set
-  ///   right_node is root unless it is null, then left_node is root
+  /// returns (result, root)
   template <search_params params, typename... Args>
   auto _search(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
     pointer_t left_root = {0};
@@ -335,20 +333,13 @@ struct splay_forest : Alloc {
       }
       if constexpr (params.has_any(params.FIND | params.EMPLACE | params.INSERT)) {
         return x;
+      } else if constexpr (params.has_any(params.GET_LEFT)) {
+        return done ? left_parent : x;
       } else {
         return done ? x : right_parent;
       }
     }();
-    if constexpr (params.has_any(params.GET_BOTH)) {
-      if (result == x) {
-        return std::pair(left_parent, x);
-      } else {
-        if (result != 0) _splay(result);
-        return std::pair(x, result);
-      }
-    } else {
-      return std::pair(result, x);
-    }
+    return std::pair(result, x);
   }
 
 #undef _SPLAY_UPDATE_LEFT

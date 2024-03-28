@@ -6,7 +6,9 @@
 
 // clang-format off
 MAKE_TRAITS(search_params,
-  (LOWER_BOUND, UPPER_BOUND, FIND, BY_KEY, EMPLACE, INSERT, GET_BOTH),
+  (LOWER_BOUND, UPPER_BOUND, FIND,
+   BY_KEY, EMPLACE, INSERT, GET_LEFT),
+  SEARCH_TYPE_PARAMS = LOWER_BOUND | UPPER_BOUND | FIND,
 );
 // clang-format on
 
@@ -48,12 +50,15 @@ auto get_search(node_t const& cur, node_t const* data, auto const&, Args const&.
 
 constexpr auto valid_search_params(search_params params) -> bool {
   bool valid = true;
-  valid &= params.count(params.LOWER_BOUND | params.UPPER_BOUND | params.FIND) == 1;
+  valid &= params.count(params.SEARCH_TYPE_PARAMS) == 1;
   if (params.has_any(params.EMPLACE)) {
     valid &= params.has_all(params.FIND | params.BY_KEY);
   }
   if (params.has_any(params.FIND)) {
-    valid &= not params.has_any(params.INSERT | params.GET_BOTH);
+    valid &= not params.has_any(params.INSERT);
+  }
+  if (params.has_any(params.GET_LEFT)) {
+    valid &= not params.has_any(params.FIND | params.INSERT);
   }
   return valid;
 }
@@ -61,9 +66,9 @@ constexpr auto valid_search_params(search_params params) -> bool {
 template <search_params params, typename node_t, typename... Args>
   requires(valid_search_params(params) and not params.has_any(params.BY_KEY))
 inline auto search(node_t const& cur, Args const&... args) -> search_result_t<params> {
-  if constexpr (params.has_all(params.UPPER_BOUND)) {
+  if constexpr (params.has_any(params.UPPER_BOUND)) {
     return get_search<params>(cur, args...) < 0;
-  } else if constexpr (params.has_all(params.LOWER_BOUND)) {
+  } else if constexpr (params.has_any(params.LOWER_BOUND)) {
     return get_search<params>(cur, args...) <= 0;
   } else {
     return get_search<params>(cur, args...);
@@ -74,9 +79,9 @@ template <search_params params, typename node_t, typename... Args>
   requires(valid_search_params(params) and params.has_any(params.BY_KEY))
 inline auto search(node_t const& cur, Args const&... args) -> search_result_t<params> {
   auto const& key = get_key<params>(args...);
-  if constexpr (params.has_all(params.UPPER_BOUND)) {
+  if constexpr (params.has_any(params.UPPER_BOUND)) {
     return key < cur.key;
-  } else if constexpr (params.has_all(params.LOWER_BOUND)) {
+  } else if constexpr (params.has_any(params.LOWER_BOUND)) {
     return key <= cur.key;
   } else {
     return key < cur.key ? -1 : cur.key < key ? 1 : 0;

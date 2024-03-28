@@ -65,13 +65,13 @@ struct get_traits_type {
     value op##= other; return *this; \
   } \
   constexpr traits_name operator op (type other) const { \
-    return traits_name{*this} &= other; \
+    return traits_name{*this} op##= other; \
   } \
   constexpr traits_name& operator op##= (traits_name other) { \
     value op##= other.value; return *this; \
   } \
   constexpr traits_name operator op (traits_name other) const { \
-    return traits_name{*this} &= other; \
+    return traits_name{*this} op##= other; \
   }
 
 #define _MAKE_FIELD_CUSTOM(field_expr) \
