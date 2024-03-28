@@ -7,22 +7,23 @@
  * STATUS
  *  operator[]
  *    untested: cf/104941f
- *  split/merge
+ *  split/join
  *    untested: 102787a
  *  other
  *    untested: treap contest: 102787
  */
 #pragma once
 
+#include "todo/binary_search_traits.h"
 #include "utility/traits.h"
 
 #include <memory>
 #include <random>
+#include <tuple>
 
 // clang-format off
 MAKE_TRAITS(treap_traits,
-  (ORDER_STATS, PERSISTENT),
-  NODE_TRAITS = ORDER_STATS,
+  (ORDER_STATS, PARENT_PTRS),
 );
 // clang-format on
 
@@ -40,7 +41,7 @@ inline auto get_rand() -> uint_fast32_t {
   return static_cast<uint_fast32_t>(_rng());
 }
 
-template <typename, treap_traits traits>
+template <typename, treap_traits>
 struct node_size {};
 
 template <typename derived_t, treap_traits traits>
@@ -50,9 +51,10 @@ struct node_size<derived_t, traits> {
   auto _pull_treap_size(node_size const* left, node_size const* right) -> void {
     size = 1 + (left == nullptr ? 0 : left->size) + (right == nullptr ? 0 : right->size);
   }
-  auto search(uint_fast32_t& index, treap_index) -> int_fast32_t {
+  template <typename index_t>
+  auto search(index_t& index, treap_index) -> int_fast32_t {
     auto const left = static_cast<derived_t*>(this)->left;
-    auto const left_size = left == nullptr ? 0 : left->size;
+    auto const left_size = static_cast<index_t>(left == nullptr ? 0 : left->size);
     if (index < left_size) {
       return -1;
     } else if (index > left_size) {
@@ -62,6 +64,16 @@ struct node_size<derived_t, traits> {
       return 0;
     }
   }
+};
+
+template <typename, treap_traits>
+struct parent_pointer {};
+
+template <typename derived_t, treap_traits traits>
+  requires(traits.has_all(traits.PARENT_PTRS))
+struct parent_pointer<derived_t, traits> {
+  derived_t* parent = nullptr;
+  void _set_parent(derived_t* p) { parent = p; }
 };
 
 template <typename derived_t>
@@ -74,8 +86,8 @@ struct node_data {
 }  // namespace treap_details
 
 template <typename derived_t, typename Key_t, treap_traits traits = treap_traits::NONE>
-  requires((traits & ~traits.NODE_TRAITS) == traits.NONE)
-struct treap_node_base : treap_details::node_data<derived_t>,
+struct treap_node_base : treap_details::parent_pointer<derived_t, traits>,
+                         treap_details::node_data<derived_t>,
                          treap_details::node_size<derived_t, traits> {
   using key_t = Key_t;
   key_t key;
@@ -84,8 +96,10 @@ struct treap_node_base : treap_details::node_data<derived_t>,
 };
 
 template <typename derived_t, treap_traits traits>
-struct treap_node_base<derived_t, void, traits> : treap_details::node_data<derived_t>,
-                                                  treap_details::node_size<derived_t, traits> {
+struct treap_node_base<derived_t, void, traits>
+    : treap_details::parent_pointer<derived_t, traits>,
+      treap_details::node_data<derived_t>,
+      treap_details::node_size<derived_t, traits> {
   using key_t = void;
 };
 
@@ -93,18 +107,23 @@ template <typename key_t, typename value_t, treap_traits traits = treap_traits::
 struct treap_map_node final
     : treap_node_base<treap_map_node<key_t, value_t, traits>, key_t, traits> {
   value_t value;
+  treap_map_node(key_t const& k)
+      : treap_node_base<treap_map_node<key_t, value_t, traits>, key_t, traits>(k) {}
   template <typename... Args>
   treap_map_node(key_t const& k, Args&&... args)
       : treap_node_base<treap_map_node<key_t, value_t, traits>, key_t, traits>(k),
         value(std::forward<Args>(args)...) {}
+  value_t& operator*() { return value; }
 };
 
 template <typename value_t, treap_traits traits>
 struct treap_map_node<void, value_t, traits> final
     : treap_node_base<treap_map_node<void, value_t, traits>, void, traits> {
   value_t value;
+  treap_map_node() = default;
   template <typename... Args>
   treap_map_node(Args&&... args) : value(std::forward<Args>(args)...) {}
+  value_t& operator*() { return value; }
 };
 
 template <typename key_t, treap_traits traits>
@@ -118,40 +137,37 @@ template <treap_traits traits>
 struct treap_map_node<void, void, traits> final
     : treap_node_base<treap_map_node<void, void, traits>, void, traits> {};
 
-template <typename Node_t, treap_traits traits, typename Alloc>
+template <typename Node_t, typename Alloc = std::allocator<Node_t>>
   requires(requires(Alloc alloc, size_t s) {
     { alloc.allocate(s) } -> std::same_as<Node_t*>;
   })
 struct treap : Alloc {
-  static_assert(not traits.has_any(traits.PERSISTENT), "not implemented");
   using node_t = Node_t;
   using key_t = typename node_t::key_t;
-  static constexpr bool has_pull =
-      requires(node_t* n) { n->_pull_treap_size(n, n); } or requires(node_t* n) { n->pull(); };
 
   node_t* root = nullptr;
 
   treap() {}
   treap(node_t* r) : root(r) {}
   treap(treap&& other) : root(other.root) { other.root = nullptr; }
-  ~treap() { erase_tree(root); }
+  ~treap() { _erase_tree(root); }
 
+  /// assumes other is not the same as this
   treap& operator=(treap&& other) {
-    if (this != &other) {
-      erase_tree(root);
-      root = other.root;
-      other.root = nullptr;
-    }
+    _erase_tree(root);
+    root = other.root;
+    other.root = nullptr;
     return *this;
   }
 
-  auto dislodge() -> treap { return treap(std::move(*this)); }
-  auto erase_tree(node_t* u) -> void {
+  auto clear() -> void { _erase_tree(root); }
+  auto _erase_tree(node_t* u) -> void {
     if (u == nullptr) return;
-    erase_tree(u->left);
-    erase_tree(u->right);
+    _erase_tree(u->left);
+    _erase_tree(u->right);
     delete_node(u);
   }
+
   template <typename... Args>
   auto new_node(Args&&... args) -> node_t* {
     return std::construct_at(Alloc::allocate(1), std::forward<Args>(args)...);
@@ -162,7 +178,7 @@ struct treap : Alloc {
   }
 
   auto pull(node_t* u) -> void {
-    if constexpr (traits.has_any(traits.ORDER_STATS)) {
+    if constexpr (requires { u->_pull_treap_size(u->left, u->right); }) {
       u->_pull_treap_size(u->left, u->right);
     }
     if constexpr (requires { u->pull(); }) {
@@ -176,91 +192,182 @@ struct treap : Alloc {
     }
   }
 
-  template <typename... Args>
-  auto emplace_at(uint_fast32_t index, Args&&... args) -> node_t* {
-    auto [left, right] = _split(index, treap_index{});
-    node_t* x = new_node(std::forward<Args>(args)...);
-    root = _merge_with_mid(left, x, right);
-    return x;
+  auto set_parent(node_t* u, node_t* p) -> void {
+    if constexpr (requires { u->_set_parent(p); }) {
+      if (u != nullptr) u->_set_parent(p);
+    }
   }
 
-  auto split_at(uint_fast32_t index) -> treap
-    requires(traits.has_any(traits.ORDER_STATS))
+  template <typename Function>
+  auto visit(Function&& f) -> void {
+    _visit_rec(root, std::forward<Function>(f));
+  }
+
+  template <typename Function>
+  auto _visit_rec(node_t* u, Function&& f) -> void {
+    if (u == nullptr) return;
+    _visit_rec(u->left, f);
+    f(*u);
+    _visit_rec(u->right, std::forward<Function>(f));
+  }
+
+  template <typename Key_t>
+  auto operator[](Key_t const& key) -> decltype(auto)
+    requires(requires(node_t u) { *u; })
   {
-    auto [left, right] = _split(index, treap_index{});
+    node_t* u = _try_emplace(key);
+    return **u;
+  }
+
+  template <typename... Args>
+  auto emplace_back(Args&&... args) -> node_t* {
+    node_t* add = new_node(std::forward<Args>(args)...);
+    return _push_back(add);
+  }
+
+  template <search_params params = search_params::NONE, typename... Args>
+  auto split(Args&&... args) -> treap {
+    auto [left, right] = _split<params>(std::forward<Args>(args)...);
     root = right;
     return treap(left);
   }
 
-  template <std::integral... Indices>
-    requires(sizeof...(Indices) >= 2)
-  auto split_at(Indices... indices) -> auto
-    requires(traits.has_any(traits.ORDER_STATS))
-  {
-    auto inds = std::array{static_cast<uint_fast32_t>(indices)...};
-    std::adjacent_difference(inds.begin(), inds.end(), inds.begin());
-    return _split_at_multi(inds, std::make_index_sequence<inds.size()>());
-  }
-  template <size_t N, size_t... Is>
-  auto _split_at_multi(std::array<uint_fast32_t, N> indices, std::index_sequence<Is...>)
-      -> auto {
-    return std::tuple_cat(std::array{split_at(indices[Is])...});
-  }
-
+  /// other will be destroyed
   auto append(treap&& other) -> treap& {
-    root = _merge(root, other.root);
-    other.root = nullptr;
+    if (other.root != nullptr) {
+      if (root == nullptr) root = other.root;
+      else root = _join(root, other.root);
+      other.root = nullptr;
+    }
     return *this;
   }
 
-  template <typename... Args>
+  /// assumes add is not NULL
+  auto _push_back(node_t* add) -> node_t* {
+    if (root == nullptr) root = add;
+    else root = _join(root, add);
+    return add;
+  }
+
+  template <search_params params, typename... Args>
+  auto _insert(node_t* add, Args&&... args) -> node_t* {
+    auto [left, right] = _split<params>(std::forward<Args>(args)...);
+    root = _join_with_mid(left, add, right);
+    return add;
+  }
+
+  /// only supports by key
+  template <typename Key_t, typename... ValueArgs>
+  auto _try_emplace(Key_t const& key, ValueArgs&&... args) -> node_t* {
+    node_t* left = nullptr;
+    node_t* right = nullptr;
+    node_t* found = _try_split(root, left, right, key);
+    if (found != nullptr) return found;
+    set_parent(left, nullptr);
+    set_parent(right, nullptr);
+    node_t* add = new_node(key, std::forward<ValueArgs>(args)...);
+    root = _join_with_mid(left, add, right);
+    return add;
+  }
+
+  /// cur can be NULL. returns ptr to node if it already exists
+  /// only sets left/right if ptr returned is nullptr
+  /// always by key
+  template <typename Key_t>
+  auto _try_split(node_t* cur, node_t*& left, node_t*& right, Key_t const& key) -> node_t* {
+    if (cur == nullptr) {
+      left = right = nullptr;
+      return nullptr;
+    }
+    push(cur);
+    if (key < cur->key) {
+      node_t* found = _try_split(cur->left, left, cur->left, key);
+      if (found == nullptr) {
+        set_parent(cur->left, cur);
+        right = cur;
+        pull(cur);
+      }
+      return found;
+    } else if (cur->key < key) {
+      node_t* found = _try_split(cur->right, cur->right, right, key);
+      if (found == nullptr) {
+        set_parent(cur->right, cur);
+        left = cur;
+        pull(cur);
+      }
+      return found;
+    } else {
+      return cur;
+    }
+  }
+
+  /// lower specifies lower_bound or upper_bound
+  template <search_params params, typename... Args>
   auto _split(Args&&... args) -> std::pair<node_t*, node_t*> {
     node_t* left = nullptr;
     node_t* right = nullptr;
-    _split_rec(root, left, right, std::forward<Args>(args)...);
+    _split_rec<params>(root, left, right, std::forward<Args>(args)...);
+    set_parent(left, nullptr);
+    set_parent(right, nullptr);
     return std::pair(left, right);
   }
 
-  template <typename... Args>
+  /// cur can be NULL
+  template <search_params params, typename... Args>
+    requires(not params.has_all(params.BY_KEY) or sizeof...(Args) == 1)
   auto _split_rec(node_t* cur, node_t*& left, node_t*& right, Args&&... args) -> void {
     if (cur == nullptr) {
       left = right = nullptr;
       return;
     }
     push(cur);
-    switch (cur->search(args...)) {
-      case -1:
-      case 0:
-        _split_rec(cur->left, left, cur->left, std::forward<Args>(args)...);
-        right = cur;
-        break;
-      case 1:
-        _split_rec(cur->right, cur->right, right, std::forward<Args>(args)...);
-        left = cur;
-        break;
+    bool const go_left = [&] {
+      if constexpr (params.has_all(params.BY_KEY)) {
+        if constexpr (params.has_all(params.UPPER_BOUND)) {
+          return (args, ...) < cur->key;
+        } else {
+          return (args, ...) <= cur->key;
+        }
+      } else {
+        if constexpr (params.has_all(params.UPPER_BOUND)) {
+          return cur->search(args...) < 0;
+        } else {
+          return cur->search(args...) <= 0;
+        }
+      }
+    }();
+    if (go_left) {
+      _split_rec<params>(cur->left, left, cur->left, std::forward<Args>(args)...);
+      set_parent(cur->left, cur);
+      right = cur;
+    } else {
+      _split_rec<params>(cur->right, cur->right, right, std::forward<Args>(args)...);
+      set_parent(cur->right, cur);
+      left = cur;
     }
     pull(cur);
   }
 
-  auto _merge_with_mid(node_t* left, node_t* mid, node_t* right) -> node_t* {
-    return _merge(_merge(left, mid), right);
+  /// assumes mid is not NULL
+  /// left and right can be NULL
+  auto _join_with_mid(node_t* left, node_t* mid, node_t* right) -> node_t* {
+    if (left != nullptr) mid = _join(left, mid);
+    if (right != nullptr) mid = _join(mid, right);
+    return mid;
   }
 
-  auto _merge(node_t* left, node_t* right) -> node_t* {
-    if (right == nullptr) return left;
-    if (left == nullptr) return right;
-    return _merge_rec(left, right);
-  }
-
-  auto _merge_rec(node_t* left, node_t* right) -> node_t* {
+  /// assumes left and right are not null
+  auto _join(node_t* left, node_t* right) -> node_t* {
     if (left->heap_depth < right->heap_depth) {
       push(left);
-      left->right = left->right == nullptr ? right : _merge_rec(left->right, right);
+      left->right = left->right == nullptr ? right : _join(left->right, right);
+      set_parent(left->right, left);
       pull(left);
       return left;
     } else {
       push(right);
-      right->left = right->left == nullptr ? left : _merge_rec(left, right->left);
+      right->left = right->left == nullptr ? left : _join(left, right->left);
+      set_parent(right->left, right);
       pull(right);
       return right;
     }
@@ -270,11 +377,9 @@ struct treap : Alloc {
 template <
     template <typename> typename AllocT, typename key_t, typename value_t,
     treap_traits traits = treap_traits::NONE>
-using make_treap_map_allocator =
-    AllocT<treap_map_node<key_t, value_t, traits & traits.NODE_TRAITS>>;
+using make_treap_map_allocator = AllocT<treap_map_node<key_t, value_t, traits>>;
 
 template <
     typename key_t, typename value_t, treap_traits traits = treap_traits::NONE,
     typename Alloc = std::allocator<treap_map_node<key_t, value_t, traits>>>
-using treap_map =
-    treap<treap_map_node<key_t, value_t, traits & traits.NODE_TRAITS>, traits, Alloc>;
+using treap_map = treap<treap_map_node<key_t, value_t, traits>, Alloc>;
