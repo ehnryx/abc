@@ -135,6 +135,11 @@ struct splay_forest : Alloc {
     std::construct_at(data + _next_data, std::forward<Args>(args)...);
     return pointer_t{_next_data--};
   }
+  template <typename... Args>
+  auto new_node_at(pointer_t x, Args&&... args) -> pointer_t {
+    std::construct_at(data + x, std::forward<Args>(args)...);
+    return x;
+  }
   template <search_params params, typename... Args>
     requires(not params.has_any(params.INSERT))
   auto _get_node(Args&&... args) -> pointer_t {
@@ -180,8 +185,8 @@ struct splay_forest : Alloc {
   }
   /// assumes x is root, and not NULL
   template <search_params params, typename... Args>
-  auto find_erase(pointer_t x, Args&&... args) -> pointer_t {
-    auto [found, root] = _search<params>(x, std::forward<Args>(args)...);
+  auto find_erase(pointer_t x, Args... args) -> pointer_t {
+    auto [found, root] = _search<params>(x, args...);
     if (found == 0) return root;
     return _erase_root(found);
   }
@@ -223,7 +228,7 @@ struct splay_forest : Alloc {
   /// assumes x is root, and not NULL.
   /// returns (result, root)
   template <search_params params, typename... Args>
-  auto _search(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
+  auto _search(pointer_t x, Args... args) -> std::pair<pointer_t, pointer_t> {
     pointer_t left_root = {0};
     pointer_t right_root = {0};
     pointer_t left_parent = {0};
@@ -234,7 +239,7 @@ struct splay_forest : Alloc {
     while (not done) {
       push(x);  // push before descending
       auto const search_dir = [&] {
-        if constexpr (params.has_any(params.BY_KEY)) {
+        if constexpr (params.has_any(params.BY_KEY) and not params.has_any(params.INSERT)) {
           return binary_search_details::search<params>(get(x), args...);
         } else {
           return binary_search_details::search<params>(get(x), data, args...);
@@ -252,7 +257,7 @@ struct splay_forest : Alloc {
         if (get(x).left == 0) {
           done = true;
           if constexpr (params.has_any(params.EMPLACE | params.INSERT)) {
-            get(x).left = _get_node<params>(std::forward<Args>(args)...);
+            get(x).left = _get_node<params>(args...);
             get(get(x).left).parent = x;
           } else {
             break;
@@ -269,7 +274,7 @@ struct splay_forest : Alloc {
         if (get(x).right == 0) {
           done = true;
           if constexpr (params.has_any(params.EMPLACE | params.INSERT)) {
-            get(x).right = _get_node<params>(std::forward<Args>(args)...);
+            get(x).right = _get_node<params>(args...);
             get(get(x).right).parent = x;
           } else {
             if constexpr (not params.has_any(params.FIND)) done = false;
@@ -339,6 +344,9 @@ struct splay_forest : Alloc {
         return done ? x : right_parent;
       }
     }();
+    if constexpr (params.has_any(params.MAKE_ROOT)) {
+      if (result and result != x) x = _splay(result);
+    }
     return std::pair(result, x);
   }
 
@@ -348,15 +356,15 @@ struct splay_forest : Alloc {
   /// assumes x is root or NULL
   /// returns [left_root, right_root]
   template <search_params params, typename... Args>
-  auto split(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
+  auto split(pointer_t x, Args... args) -> std::pair<pointer_t, pointer_t> {
     if (x == 0) return std::pair(x, x);
-    return _split<params>(x, std::forward<Args>(args)...);
+    return _split<params>(x, args...);
   }
   /// assumes x is root, and not NULL
   /// returns [left_root, right_root]
   template <search_params params, typename... Args>
-  auto _split(pointer_t x, Args&&... args) -> std::pair<pointer_t, pointer_t> {
-    auto const [after, root] = _search<params>(x, std::forward<Args>(args)...);
+  auto _split(pointer_t x, Args... args) -> std::pair<pointer_t, pointer_t> {
+    auto const [after, root] = _search<params>(x, args...);
     if (after == 0) return std::pair(root, pointer_t{0});
     _splay(after);  // after is now root. should be consistent with append
     return std::pair(_split_before_root(after), after);

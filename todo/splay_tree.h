@@ -38,11 +38,12 @@ struct splay_tree {
   }
   auto operator[](pointer_t x) -> node_t& { return forest->get(x); }
   auto operator->() -> node_t* { return &forest->get(root); }
+  auto rank(pointer_t x) -> int { return forest->get(splay(x).left).size; }
   auto splay(pointer_t new_root) -> node_t& {
     root = forest->splay(new_root);
     return forest->get(root);
   }
-  auto rank(pointer_t x) -> int { return forest->get(splay(x).left).size; }
+  auto data() -> node_t* { return forest->data; }
 
   template <typename... Args>
   auto try_emplace(Args&&... args) -> pointer_t {
@@ -64,10 +65,13 @@ struct splay_tree {
   }
 
   template <search_params params, typename... Args>
-  auto erase(Args&&... args) -> void {
+  auto erase(Args... args) -> pointer_t {
+    auto found = pointer_t{0};
     if (root != 0) {
-      root = forest->template find_erase<params>(root, std::forward<Args>(args)...);
+      tie(found, root) = forest->template _search<params | params.MAKE_ROOT>(root, args...);
+      root = forest->_erase_root(found);
     }
+    return found;
   }
   auto erase_root() -> void {
     if (root != 0) {
@@ -79,15 +83,16 @@ struct splay_tree {
   auto new_node(Args&&... args) -> pointer_t {
     return forest->new_node(std::forward<Args>(args)...);
   }
+  template <typename... Args>
+  auto new_node_at(pointer_t at, Args&&... args) -> pointer_t {
+    return forest->new_node_at(at, std::forward<Args>(args)...);
+  }
   template <search_params params, typename... Args>
-  auto insert(pointer_t add, Args&&... args) -> pointer_t {
+  auto insert(pointer_t add, Args... args) -> pointer_t {
     if (root == 0) {
       root = add;
     } else {
-      root =
-          forest
-              ->template _search<params | params.INSERT>(root, add, std::forward<Args>(args)...)
-              .first;
+      root = forest->template _search<params | params.INSERT>(root, add, args...).first;
     }
     return root;
   }
@@ -123,21 +128,19 @@ struct splay_tree {
   }
 
   template <search_params params, typename... Args>
-  auto search(Args&&... args) -> pointer_t {
+  auto search(Args... args) -> pointer_t {
     pointer_t found = {0};
     if (root != 0) {
-      std::tie(found, root) =
-          forest->template _search<params>(root, std::forward<Args>(args)...);
+      std::tie(found, root) = forest->template _search<params>(root, args...);
     }
     return found;
   }
 
   /// returns a splay tree for the part after the split
   template <search_params params, typename... Args>
-  auto split(Args&&... args) -> splay_tree {
+  auto split(Args... args) -> splay_tree {
     if (root == 0) return splay_tree(forest);
-    auto const [before, after] =
-        forest->template _split<params>(root, std::forward<Args>(args)...);
+    auto const [before, after] = forest->template _split<params>(root, args...);
     root = before;
     return splay_tree(forest, after);
   }
@@ -155,6 +158,11 @@ struct splay_tree {
   auto for_each(Function&& f) -> void {
     forest->visit(root, std::move(f));
   }
+};
+
+template <typename key_t, splay_traits traits = splay_traits::NONE>
+struct splay_set : splay_node_base<splay_set<key_t, traits>, key_t, traits> {
+  using splay_node_base<splay_set<key_t, traits>, key_t, traits>::splay_node_base;
 };
 
 template <typename node_t, typename Alloc = std::allocator<node_t>>

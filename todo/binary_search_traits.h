@@ -7,7 +7,7 @@
 // clang-format off
 MAKE_TRAITS(search_params,
   (LOWER_BOUND, UPPER_BOUND, FIND,
-   BY_KEY, EMPLACE, INSERT, GET_LEFT),
+   BY_KEY, EMPLACE, INSERT, GET_LEFT, MAKE_ROOT),
   SEARCH_TYPE_PARAMS = LOWER_BOUND | UPPER_BOUND | FIND,
 );
 // clang-format on
@@ -30,10 +30,10 @@ template <search_params params, typename Key>
 auto get_key(Key const& key, ...) -> decltype(auto) {
   return key;
 }
-template <search_params params, typename Key>
+template <search_params params, typename node_t, typename pointer_t>
   requires(params.count(params.INSERT) == 1)
-auto get_key(auto const&, Key const& key, ...) -> decltype(auto) {
-  return key;
+auto get_key(node_t const* data, pointer_t add) -> auto const& {
+  return data[add].key;
 }
 
 template <search_params params, typename node_t, typename... Args>
