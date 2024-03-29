@@ -57,11 +57,12 @@ struct segment_length_t {
   explicit segment_length_t(size_t v) : value(v) {}
   explicit segment_length_t(int v) : value(v) {}
   explicit segment_length_t(int64_t v) : value(v) {}
-  explicit operator size_t() const { return value; }
-  explicit operator int() const { return (int)value; }
-  explicit operator int64_t() const { return value; }
-  segment_length_t operator/(size_t c) { return segment_length_t{value / c}; }
-  segment_length_t operator*(size_t c) { return segment_length_t{value / c}; }
+  segment_length_t operator/(size_t c) const { return segment_length_t{value / c}; }
+  segment_length_t operator*(size_t c) const { return segment_length_t{value / c}; }
+  template <typename T>
+  explicit operator T() const {
+    return T(value);
+  }
 };
 
 template <typename node_t, typename acc_t, typename... Args>
@@ -285,6 +286,15 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
     if constexpr (persistent) return i;
   }
 
+  template <typename... Args>
+    requires(not requires(node_t nd, segment_length_t sl, Args const&... args) {
+      nd.put_point(sl, args...);
+    })
+  auto put_point(int i, Args const&... args) -> update_return_t {
+    data[i].put_point(args...);
+    if constexpr (persistent) return i;
+  }
+
   template <typename acc_t, typename... Args>
     requires(not has_segment_accumulate_with_length<node_t, acc_t, Args...>)
   auto accumulate(int i, acc_t acc, Args const&... args) -> acc_t {
@@ -403,8 +413,14 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
       Args const&... args) -> update_return_t {
     if (seg_l == seg_r) {
       if constexpr (persistent) i = this->make_node(i);
-      if constexpr (requires { data[i].put(args...); }) return put(i, args...);
-      else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
+      if constexpr (requires { data[i].put_point(args...); }) {
+        return put_point(i, args...);
+      } else if constexpr (requires(segment_length_t sl) { data[i].put_point(sl, args...); }) {
+        return put_point(i, segment_length_t{seg_r - seg_l + 1}, args...);
+      } else {
+        if constexpr (requires { data[i].put(args...); }) return put(i, args...);
+        else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
+      }
     }
     if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
     if constexpr (has_push_no_length) push(i);
@@ -427,6 +443,11 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
       }
     }
     if constexpr (has_pull) data[i].pull(data[get_left(i)], data[get_right(i)]);
+    if constexpr (requires { data[i].put_point(args...); }) {
+      put_point(i, args...);
+    } else if constexpr (requires(segment_length_t sl) { data[i].put_point(sl, args...); }) {
+      put_point(i, segment_length_t{seg_r - seg_l + 1}, args...);
+    }
     if constexpr (persistent) return i;
   }
 
