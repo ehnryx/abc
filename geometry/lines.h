@@ -1,7 +1,7 @@
 /* Lines
  * STATUS
  *  [seg_x_seg] tested: boj/15010,17386
- *  [line_inter] tested: boj/2022,6458
+ *  [line_inter] tested: boj/2022,6458,21048
  */
 #pragma once
 
@@ -43,7 +43,7 @@ auto line_inter(point<T> const& a, point<T> const& b, point<T> const& c, point<T
   if constexpr (std::is_same_v<T, I>) {
     return a + cross(c - a, d - c) / cross(b - a, d - c) * (b - a);
   } else {
-    return point<I>(a) + point<I>(b - a) * cross(c - a, d - c) / cross(b - a, d - c);
+    return point<I>(a) + point<I>(b - a) * I(cross(c - a, d - c)) / I(cross(b - a, d - c));
   }
 }
 

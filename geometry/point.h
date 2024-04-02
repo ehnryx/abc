@@ -5,7 +5,7 @@
  *  traits (intersection_t / product_t) can be user-defined by
  *    specializing the class point_traits
  * STATUS
- *  untested
+ *  tested
  */
 #pragma once
 
@@ -141,16 +141,22 @@ struct point {
   static auto by_y(point const& a, point const& b) -> bool {
     return a.y < b.y or (a.y == b.y && a.x < b.x);
   }
-  static auto ccw_from_ref(point const& ref) {
+  static auto tiebreak_by_norm(const point& u, const point& v) -> bool {
+    return u.norm() < v.norm();
+  }
+  /// neither u nor v should be (0, 0) in the comparisons
+  /// default: break ties by distance from origin
+  template <typename Function = decltype(tiebreak_by_norm)>
+  static auto ccw_from_ref(point const& ref, Function const& tiebreak = tiebreak_by_norm) {
     // neither u nor v should be ref
-    return [ref](point const& u, point const& v) {
+    return [ref, tiebreak](point const& u, point const& v) {
       auto const cu = ref.cross(u);
       auto const cv = ref.cross(v);
       bool const u_pos = cu > 0 or (cu == 0 and ref.dot(u) > 0);
       bool const v_pos = cv > 0 or (cv == 0 and ref.dot(v) > 0);
       if (u_pos != v_pos) return u_pos;
       auto const turn = u.cross(v);
-      return turn > 0 or (turn == 0 and u.norm() < v.norm());  // break ties by distance
+      return turn > 0 or (turn == 0 and tiebreak(u, v));
     };
   }
 };
@@ -178,7 +184,7 @@ bool equal(epsilon<T> eps, point<T> const& a, point<T> const& b) {
   return abs(a - b) <= eps;
 }
 template <std::floating_point T>
-bool less_than(T eps, point<T> const& a, point<T> const& b) {
+bool less_than(epsilon<T> eps, point<T> const& a, point<T> const& b) {
   return a.x + eps < b.x or (a.x <= b.x + eps && a.y + eps < b.y);
 }
 

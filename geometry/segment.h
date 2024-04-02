@@ -15,9 +15,15 @@ struct segment {
   point<T> start, end;
   segment() = default;
   segment(point<T> const& s, point<T> const& e) : start(s), end(e) {}
+  auto direction() const -> point<T> { return end - start; }
   template <typename F>
   auto get(F t) const -> point<F> {
     return point<F>(start.x * (1 - t) + end.x * t, start.y * (1 - t) + end.y * t);
+  }
+  template <typename F>
+  auto get(point<F> const& v) const -> point<T>::intersection_t {
+    return dot(v - point<F>(start), point<F>(direction())) /
+           typename point<T>::intersection_t(direction().norm());
   }
   bool operator<=>(segment const& o) const {
     return std::tie(start, end) <=> std::tie(o.start, o.end);
@@ -29,6 +35,11 @@ struct segment {
     return is >> s.start >> s.end;
   }
 };
+
+template <typename T>
+auto line_inter(segment<T> const& ab, segment<T> const& cd) {
+  return line_inter(ab.start, ab.end, cd.start, cd.end);
+}
 
 template <std::floating_point T>
 bool seg_x_seg(
