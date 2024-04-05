@@ -7,20 +7,21 @@
  */
 #pragma once
 
+#include "utility/output_tuple.h"
+
 #include <array>
-#include <cstddef>
 #include <iostream>
 
 template <typename T, size_t Dimension>
   requires(std::is_floating_point_v<T> or std::is_integral_v<T>)
 struct point_nd {
+  static constexpr auto dimension_indices = std::make_index_sequence<Dimension>();
   std::array<T, Dimension> xs = {};
   point_nd() = default;
   template <typename... Args>
   point_nd(Args... coords) : xs{coords...} {}
   template <typename U>
-  explicit point_nd(point_nd<U, Dimension> const& other)
-      : point_nd(other, std::make_index_sequence<Dimension>()) {}
+  explicit point_nd(point_nd<U, Dimension> const& other) : point_nd(other, dimension_indices) {}
   template <typename U, size_t... Is>
   explicit point_nd(point_nd<U, Dimension> const& other, std::index_sequence<Is...>)
       : xs{T(other[Is])...} {}
@@ -51,7 +52,9 @@ struct point_nd {
     for (size_t i = 0; i < xs.size(); i++) xs[i] = -xs[i];
     return *this;
   }
-  auto dot(point_nd const& other) const -> T {
+  auto dot(point_nd const& other) const -> T
+    requires(std::is_floating_point_v<T>)  // i don't want to think about overflow
+  {
     T res = 0;
     for (size_t i = 0; i < xs.size(); i++) {
       res += xs[i] * other.xs[i];
@@ -72,6 +75,7 @@ struct point_nd {
     }
     return is;
   }
+  auto operator*() const { return make_output_tuple(xs); }
 };
 
 template <typename T, size_t D>

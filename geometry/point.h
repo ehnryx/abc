@@ -9,75 +9,33 @@
  */
 #pragma once
 
+#include "geometry/helpers.h"
 #include "utility/output_tuple.h"
 
 #include <cmath>
-#include <cstdint>
-#include <iostream>
-#include <tuple>
-#include <type_traits>
-
-namespace geometry {
-template <typename T>
-concept non_floating = not std::is_floating_point_v<T>;
-
-template <typename T>
-struct default_point_traits {
-  static constexpr bool not_implemented = true;
-};
-template <std::floating_point T>
-struct default_point_traits<T> {
-  using product_t = T;
-  using intersection_t = T;
-};
-template <typename T>
-  requires(std::is_same_v<T, int32_t> or std::is_same_v<T, int>)
-struct default_point_traits<T> {
-  using product_t = int64_t;
-  using intersection_t = double;
-};
-template <typename T>
-  requires(std::is_same_v<T, int64_t> or std::is_same_v<T, long long>)
-struct default_point_traits<T> {
-  using product_t = intmax_t;
-  using intersection_t = long double;
-};
-
-template <typename T, typename From>
-struct implicit_conversion {
-  static constexpr bool value =
-      std::is_floating_point_v<T> or (std::is_integral_v<From> and sizeof(From) <= sizeof(T));
-};
-template <typename T, typename From>
-constexpr bool implicit_conversion_v = implicit_conversion<T, From>::value;
-}  // namespace geometry
 
 template <typename T>
 struct point_traits : geometry::default_point_traits<T> {};
 
 template <typename T>
 struct point {
-  using type = T;
   using product_t = point_traits<T>::product_t;
   using intersection_t = point_traits<T>::intersection_t;
-
   T x, y;
-  point() : x(0), y(0) {
-    if constexpr (
-        std::is_integral_v<T> and std::is_integral_v<product_t> and
-        sizeof(T) == sizeof(product_t)) {
-      // clang-format off
-      static constexpr auto warning = "point_traits<T> has an integral T that is the same size as product_t. Are you sure you want this? May overflow silently";
-      // clang-format on
-    }
-  }
-  point(T const& _x, T const& _y) : x(_x), y(_y) {}
+  constexpr point() : x(0), y(0) {}
+  constexpr point(T const& _x, T const& _y) : x(_x), y(_y) {}
   template <typename U>
     requires(geometry::implicit_conversion_v<T, U>)
-  point(point<U> const& v) : x(v.x), y(v.y) {}
+  constexpr point(point<U> const& v) : x(v.x), y(v.y) {}
   template <typename U>
     requires(not geometry::implicit_conversion_v<T, U>)
-  explicit point(point<U> const& v) : x(v.x), y(v.y) {}
+  constexpr explicit point(point<U> const& v) : x(v.x), y(v.y) {}
+  template <typename U, typename V>
+  static auto polar(U const& radius, V const& angle) -> point
+    requires(std::is_floating_point_v<T>)
+  {
+    return point(radius * std::cos(angle), radius * std::sin(angle));
+  }
 
   friend std::ostream& operator<<(std::ostream& os, point const& v) {
     return os << "(" << v.x << "," << v.y << ")";
@@ -85,10 +43,9 @@ struct point {
   friend std::istream& operator>>(std::istream& is, point& v) { return is >> v.x >> v.y; }
   auto operator*() const { return output_tuple(x, y); }
 
+  bool operator==(point const& v) const { return x == v.x and y == v.y; }
   bool operator<(point const& v) const { return std::tie(x, y) < std::tie(v.x, v.y); }
   bool operator>(point const& v) const { return std::tie(x, y) > std::tie(v.x, v.y); }
-  bool operator==(point const& v) const { return x == v.x and y == v.y; }
-  bool operator!=(point const& v) const { return !operator==(v); }
   point operator-() const { return point(-x, -y); }
   point operator+(point const& v) const { return point(x + v.x, y + v.y); }
   point operator-(point const& v) const { return point(x - v.x, y - v.y); }
@@ -116,16 +73,9 @@ struct point {
   product_t cross(point const& v) const { return product_t(x) * v.y - product_t(y) * v.x; }
   intersection_t abs() const { return std::sqrt(norm()); }
   intersection_t absl() const { return sqrtl(norm()); }
-  intersection_t arg() const { return std::atan2(product_t(y), product_t(x)); }
-  intersection_t argl() const { return atan2l(product_t(y), product_t(x)); }
+  intersection_t arg() const { return std::atan2(y, x); }
+  intersection_t argl() const { return atan2l(y, x); }
   T manhattan() const { return std::abs(x) + std::abs(y); }
-
-  template <typename U, typename V>
-  static auto polar(U const& radius, V const& angle) -> point
-    requires(std::is_floating_point_v<T>)
-  {
-    return point(radius * std::cos(angle), radius * std::sin(angle));
-  }
 
   // similar interface to std::complex
   T real() const { return x; }
@@ -176,8 +126,6 @@ template <typename T> auto cross(point<T> const& a, point<T> const& b) { return 
 template <typename T> auto manhattan(point<T> const& v) { return v.manhattan(); }
 // clang-format on
 
-#include "utility/named_types.h"
-
 namespace geometry {
 template <std::floating_point T>
 bool equal(epsilon<T> eps, point<T> const& a, point<T> const& b) {
@@ -186,15 +134,6 @@ bool equal(epsilon<T> eps, point<T> const& a, point<T> const& b) {
 template <std::floating_point T>
 bool less_than(epsilon<T> eps, point<T> const& a, point<T> const& b) {
   return a.x + eps < b.x or (a.x <= b.x + eps && a.y + eps < b.y);
-}
-
-template <std::floating_point T>
-int sign(T x, epsilon<T> eps) {
-  return x < -eps ? -1 : x > eps ? 1 : 0;
-}
-template <geometry::non_floating T>
-int sign(T x) {
-  return x < 0 ? -1 : x > 0 ? 1 : 0;
 }
 }  // namespace geometry
 

@@ -33,7 +33,7 @@ auto project(point<T> const& a, point<T> const& b, point<T> const& v) {
   if constexpr (std::is_same_v<T, I>) {
     return a + dot(v - a, b - a) / norm(b - a) * (b - a);
   } else {
-    return point<I>(a) + point<I>(b - a) * dot(v - a, b - a) / norm(b - a);
+    return point<I>(a) + I(dot(v - a, b - a)) / I(norm(b - a)) * point<I>(b - a);
   }
 }
 
@@ -43,7 +43,7 @@ auto line_inter(point<T> const& a, point<T> const& b, point<T> const& c, point<T
   if constexpr (std::is_same_v<T, I>) {
     return a + cross(c - a, d - c) / cross(b - a, d - c) * (b - a);
   } else {
-    return point<I>(a) + point<I>(b - a) * I(cross(c - a, d - c)) / I(cross(b - a, d - c));
+    return point<I>(a) + I(cross(c - a, d - c)) / I(cross(b - a, d - c)) * point<I>(b - a);
   }
 }
 
@@ -92,16 +92,16 @@ bool seg_x_seg(
   if (ab <= eps) return not strict && on_segment(eps, c, d, a);
   auto const cd = abs(c - d);
   if (cd <= eps) return not strict && on_segment(eps, a, b, d);
-  int const r1 = geometry::sign(cross(b - a, c - a), epsilon{eps * ab});
-  int const r2 = geometry::sign(cross(b - a, d - a), epsilon{eps * ab});
+  int const r1 = geometry::sign(epsilon{eps * ab}, cross(b - a, c - a));
+  int const r2 = geometry::sign(epsilon{eps * ab}, cross(b - a, d - a));
   if (r1 == 0 && r2 == 0) {
     return strict ? geometry::less_than(eps, std::min(a, b), std::max(c, d)) &&
                         geometry::less_than(eps, std::min(c, d), std::max(a, b))
                   : not(geometry::less_than(eps, std::max(a, b), std::min(c, d)) ||
                         geometry::less_than(eps, std::max(c, d), std::min(a, b)));
   }
-  int const r3 = geometry::sign(cross(d - c, a - c), epsilon{eps * cd});
-  int const r4 = geometry::sign(cross(d - c, b - c), epsilon{eps * cd});
+  int const r3 = geometry::sign(epsilon{eps * cd}, cross(d - c, a - c));
+  int const r4 = geometry::sign(epsilon{eps * cd}, cross(d - c, b - c));
   return strict ? r1 * r2 < 0 && r3 * r4 < 0 : r1 * r2 <= 0 && r3 * r4 <= 0;
 }
 template <geometry::non_floating T>

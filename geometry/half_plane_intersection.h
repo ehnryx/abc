@@ -60,7 +60,7 @@ auto half_plane_intersection(std::vector<segment<T>> segs)
     }
     // TODO eps?
     if (envelope.back().line.direction().cross(segs[i].direction()) <= 0) {
-      return {};  // right turn in a ccw-oriented hull. empty intersection
+      return {};  // right turn in a ccw-oriented hull. empty or unbounded
     }
     envelope.back().last = envelope.back().line.get(it);
     envelope.emplace_back(segs[i], segs[i].get(it));

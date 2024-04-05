@@ -17,6 +17,7 @@
 #include "geometry/point.h"
 #include "utility/named_types.h"
 
+#include <algorithm>
 #include <vector>
 
 template <std::floating_point T>

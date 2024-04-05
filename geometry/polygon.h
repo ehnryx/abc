@@ -9,6 +9,7 @@
 #include "geometry/segment.h"
 
 #include <algorithm>
+#include <iostream>
 #include <vector>
 
 template <typename T>
@@ -69,7 +70,7 @@ struct polygon {
     if (on_boundary(eps, c)) return not strict;
     double sum = 0;
     for (int i = size() - 1, j = 0; j < size(); i = j++) {
-      sum += atan2(cross(p[i] - c, p[j] - c), dot(p[i] - c, p[j] - c));
+      sum += std::atan2(cross(p[i] - c, p[j] - c), dot(p[i] - c, p[j] - c));
     }
     return std::abs(sum) > 1;
   }
@@ -79,7 +80,8 @@ struct polygon {
     if (on_boundary(c)) return not strict;
     double sum = 0;
     for (int i = size() - 1, j = 0; j < size(); i = j++) {
-      sum += atan2(cross(p[i] - c, p[j] - c), dot(p[i] - c, p[j] - c));
+      using I = point<T>::intersection_t;
+      sum += std::atan2(I(cross(p[i] - c, p[j] - c)), I(dot(p[i] - c, p[j] - c)));
     }
     return std::abs(sum) > 1;
   }
