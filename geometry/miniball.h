@@ -3,10 +3,13 @@
  *  https://people.inf.ethz.ch/gaertner/subdir/texts/own_work/esa99_final.pdf
  *  https://people.inf.ethz.ch/gaertner/subdir/software/miniball.html
  * USAGE
- *  idk
+ *  auto mb = miniball<type, dimension>(iterable of point_nd<type, dimension>);
+ * MEMBERS
+ *  center()
+ *  radius()
+ *  squared_radius()
  * STATUS
- *  tested: boj/11930
- *  TODO: https://www.acmicpc.net/problemset?sort=ac_desc&algo=162
+ *  tested: boj/9158,11930,14507,21182
  */
 #pragma once
 
