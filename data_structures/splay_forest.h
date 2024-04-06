@@ -413,7 +413,7 @@ struct splay_forest : Alloc {
     return x;
   }
 
-  /// assumes x is not NULL. does not splay. x will get pushed
+  /// does not splay. x will not get pushed. returns NULL if x is NULL
   auto find_root(pointer_t x) -> pointer_t {
     while (get(x).parent != 0) {
       x = get(x).parent;

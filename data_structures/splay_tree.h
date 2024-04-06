@@ -2,7 +2,7 @@
  * USAGE
  *  wrapper around splay tree nodes
  * STATUS
- *  tested: cf/104941f
+ *  tested: cf/104941f; boj/15010
  */
 #pragma once
 
