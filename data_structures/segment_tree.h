@@ -37,6 +37,8 @@
  *  tested: cf/501d,474f,609f,292e; kattis/precariousstacks
  * STATUS [persistent]
  *  tested: cf/501d,474f,292e,707d,786c
+ * STATUS [put_cond]
+ *  tested: boj/17473,17477
  */
 #pragma once
 
@@ -221,6 +223,18 @@ struct segment_tree_data<node_t, traits> : persistent_segment_tree_data<node_t> 
   }
 };
 
+namespace segment_tree_details {
+template <typename node_t, typename... Args>
+struct return_getter {
+  using type = std::false_type;
+};
+template <typename node_t, typename... Args>
+  requires(requires(node_t nd, Args... args) { nd.get(args...); })
+struct return_getter<node_t, Args...> {
+  using type = decltype(std::declval<node_t>().get(std::declval<Args>()...));
+};
+}  // namespace segment_tree_details
+
 template <typename Node_t, segment_tree_traits traits = segment_tree_traits::NONE>
   requires(traits.count(traits.SPARSE | traits.PERSISTENT) <= 1)
 struct segment_tree : segment_tree_data<Node_t, traits> {
@@ -239,7 +253,7 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
   using node_t = Node_t;
 
   template <typename... Args>
-  using return_t = decltype(std::declval<node_t>().get(std::declval<Args>()...));
+  using return_t = segment_tree_details::return_getter<node_t, Args...>::type;
 
   using update_return_t = std::conditional_t<persistent, int, void>;
 
@@ -413,14 +427,15 @@ struct segment_tree : segment_tree_data<Node_t, traits> {
       Args const&... args) -> update_return_t {
     if (seg_l == seg_r) {
       if constexpr (persistent) i = this->make_node(i);
+      if constexpr (requires { data[i].put(args...); }) put(i, args...);
+      else put(i, segment_length_t{seg_r - seg_l + 1}, args...);
       if constexpr (requires { data[i].put_point(args...); }) {
-        return put_point(i, args...);
+        put_point(i, args...);
       } else if constexpr (requires(segment_length_t sl) { data[i].put_point(sl, args...); }) {
-        return put_point(i, segment_length_t{seg_r - seg_l + 1}, args...);
-      } else {
-        if constexpr (requires { data[i].put(args...); }) return put(i, args...);
-        else return put(i, segment_length_t{seg_r - seg_l + 1}, args...);
+        put_point(i, segment_length_t{seg_r - seg_l + 1}, args...);
       }
+      if constexpr (persistent) return i;
+      else return;
     }
     if constexpr (has_push_with_length) push(i, segment_length_t{seg_r - seg_l + 1});
     if constexpr (has_push_no_length) push(i);

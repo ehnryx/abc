@@ -18,8 +18,10 @@ struct union_find {
   std::vector<int> r;
   int_fast32_t _size;
   union_find(size_t n) : r(n, -1), _size(n) {}
+  auto operator[](int x) -> int { return find(x); }
   auto find(int x) -> int { return r[x] < 0 ? x : r[x] = find(r[x]); }
   auto size(int x) -> int { return -r[find(x)]; }
+  /// returns true if the link is new
   auto link(int x, int y) -> bool {
     if ((x = find(x)) == (y = find(y))) return false;
     if (r[x] < r[y]) std::swap(x, y);
