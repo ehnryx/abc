@@ -23,8 +23,8 @@ auto golden_section_search(
   static constexpr auto inv_phi = Coordinate(1) / std::numbers::phi_v<Coordinate>;
   std::optional<decltype(f(left))> l_value, r_value;
   for (int iteration = 0; iteration < n_iters; iteration++) {
-    auto const l_mid = left * inv_phi + right * (1 - inv_phi);
-    auto const r_mid = left * (1 - inv_phi) + right * inv_phi;
+    auto const l_mid = left + (right - left) * (1 - inv_phi);
+    auto const r_mid = left + (right - left) * inv_phi;
     if (not l_value) l_value.emplace(f(l_mid));
     if (not r_value) r_value.emplace(f(r_mid));
     if (cmp(*l_value, *r_value)) {
