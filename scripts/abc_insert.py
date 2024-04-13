@@ -61,10 +61,12 @@ def main(args):
             if before_pragma and not any(line.strip() == "#pragma once" for line in all_lines):
                 before_pragma = False  # no `#pragma once`, include the entire file
             if not before_pragma:
-                ouf.write(f'#line 1 "{path}"\n')
+                if args.line:
+                    ouf.write(f'#line 1 "{path}"\n')
             for lnum, line in enumerate(all_lines):
                 if line.strip() == "#pragma once":
-                    ouf.write(f'#line {lnum + 2} "{path}"\n')
+                    if args.line:
+                        ouf.write(f'#line {lnum + 2} "{path}"\n')
                     before_pragma = False
                     continue
                 if before_pragma:
@@ -75,7 +77,8 @@ def main(args):
                     ouf.write(f"// START {line}")
                     expand(absolute_include, ouf, before_pragma=True)
                     ouf.write(f"// END {line}")
-                    ouf.write(f'#line {lnum + 2} "{path}"\n')
+                    if args.line:
+                        ouf.write(f'#line {lnum + 2} "{path}"\n')
                 else:
                     ouf.write(line)
 
@@ -104,4 +107,5 @@ def register(subs):
         default=[],  # use defines by default
         help="respect the preprocessor and use defines (-D)",
     )
+    parser.add_argument("--line", "-l", action="store_true", help="add the #line directives")
     parser.set_defaults(func=main)
