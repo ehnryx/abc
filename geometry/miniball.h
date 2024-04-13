@@ -16,9 +16,11 @@
 #include "geometry/point_nd.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <list>
+#include <vector>
 
 template <std::floating_point T, unsigned Dimension>
   requires(Dimension > 0)

@@ -19,14 +19,15 @@
 namespace geometry {
 template <typename T>
 struct envelope_line {
+  using F = std::conditional_t<std::is_floating_point_v<T>, T, double>;
   segment<T> const line;
-  double first, last;
+  F first, last;
 };
 }  // namespace geometry
 
 /// assumes that the intersection is bounded
 template <typename T>
-auto half_plane_intersection(std::vector<segment<T>> segs)
+auto half_plane_intersection(std::vector<segment<T>> segs, keep keep_duplicates = {false})
     -> polygon<typename point<T>::intersection_t> {
   std::sort(begin(segs), end(segs), [](segment<T> const& a, segment<T> const& b) {
     return point<T>::ccw_from_ref({0, -1}, [&a, &b](...) {
@@ -52,7 +53,7 @@ auto half_plane_intersection(std::vector<segment<T>> segs)
     while (envelope.size() > 1) {
       auto cur = envelope.back().line.get(it);
       // TODO eps?
-      if (cur > envelope.back().first) {
+      if (keep_duplicates ? (cur >= envelope.back().first) : (cur > envelope.back().first)) {
         break;
       }
       envelope.pop_back();
@@ -69,9 +70,9 @@ auto half_plane_intersection(std::vector<segment<T>> segs)
     auto it = line_inter(envelope[s].line, envelope[t].line);
     auto s_first = envelope[s].line.get(it);
     auto t_last = envelope[t].line.get(it);
-    if (s_first > envelope[s].last) {
+    if (keep_duplicates ? (s_first >= envelope[s].last) : (s_first > envelope[s].last)) {
       s++;
-    } else if (t_last < envelope[t].first) {
+    } else if (keep_duplicates ? (t_last <= envelope[t].first) : (t_last < envelope[t].first)) {
       t--;
     } else {
       envelope[s].first = s_first;

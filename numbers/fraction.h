@@ -12,6 +12,14 @@
 
 namespace fraction_details {
 struct skip_gcd {};
+template <typename T>
+auto gcd(T const& a, T const& b) {
+  if constexpr (std::is_integral_v<T>) return std::abs(std::gcd(a, b));
+  else {
+    if (b == 0) return a < 0 ? -a : a;
+    return gcd(b, a % b);
+  }
+}
 };  // namespace fraction_details
 
 template <typename T>
@@ -19,7 +27,7 @@ struct fraction {
   T num, den;
   fraction(T const& n = 0) : num(n), den(1) {}
   fraction(T const& n, T const& d) {
-    T const g = std::abs(std::gcd(n, d));
+    T const g = fraction_details::gcd(n, d);
     num = d < 0 ? -n / g : n / g;
     den = d < 0 ? -d / g : d / g;
   }
@@ -40,47 +48,54 @@ struct fraction {
     return os << v.numerator() << '/' << v.denominator();
   }
   fraction operator-() const { return fraction(-num, den, fraction_details::skip_gcd{}); }
-  fraction operator+(const fraction& o) const { return fraction(*this) += o; }
-  fraction operator-(const fraction& o) const { return fraction(*this) -= o; }
-  fraction operator*(const fraction& o) const { return fraction(*this) *= o; }
-  fraction operator/(const fraction& o) const { return fraction(*this) /= o; }
-  fraction& operator+=(const fraction& o) {
-    T g = std::gcd(den, o.den);
+  fraction operator+(fraction const& o) const { return fraction(*this) += o; }
+  fraction operator-(fraction const& o) const { return fraction(*this) -= o; }
+  fraction operator*(fraction const& o) const { return fraction(*this) *= o; }
+  fraction operator/(fraction const& o) const { return fraction(*this) /= o; }
+  // clang-format off
+  template <std::integral U>
+  friend auto operator*(U const& c, fraction const& f) -> fraction { return f * c; }
+  template <std::integral U>
+  friend auto operator/(U const& c, fraction const& f) -> fraction { return f.inverse() * c; }
+  // clang-format on
+  fraction& operator+=(fraction const& o) {
+    T g = fraction_details::gcd(den, o.den);
     den /= g;
     num = num * (o.den / g) + o.num * den;
-    g = std::gcd(num, g);
+    g = fraction_details::gcd(num, g);
     num /= g;
     den *= o.den / g;
     return *this;
   }
-  fraction& operator-=(const fraction& o) {
-    T g = std::gcd(den, o.den);
+  fraction& operator-=(fraction const& o) {
+    T g = fraction_details::gcd(den, o.den);
     den /= g;
     num = num * (o.den / g) - o.num * den;
-    g = std::gcd(num, g);
+    g = fraction_details::gcd(num, g);
     num /= g;
     den *= o.den / g;
     return *this;
   }
-  fraction& operator*=(const fraction& o) {
-    T const gn = std::gcd(num, o.den);
-    T const gd = std::gcd(den, o.num);
+  fraction& operator*=(fraction const& o) {
+    T const gn = fraction_details::gcd(num, o.den);
+    T const gd = fraction_details::gcd(den, o.num);
     num = num / gn * o.num / gd;
     den = den / gd * o.den / gn;
     return *this;
   }
-  fraction& operator/=(const fraction& o) {
-    T const gn = std::gcd(num, o.num);
-    T const gd = std::gcd(den, o.den);
+  fraction& operator/=(fraction const& o) {
+    T const gn = fraction_details::gcd(num, o.num);
+    T const gd = fraction_details::gcd(den, o.den);
     num = num / gn * (o.num < 0 ? -o.den : o.den) / gd;
     den = den / gd * (o.num < 0 ? -o.num : o.num) / gn;
     return *this;
   }
   auto inverse() const -> fraction {
-    return num < 0 ? fraction(-den, -num, false) : fraction(den, num, false);
+    return num < 0 ? fraction(-den, -num, fraction_details::skip_gcd{})
+                   : fraction(den, num, fraction_details::skip_gcd{});
   }
   /// may overflow
-  auto operator<(const fraction& o) const -> bool {
+  auto operator<(fraction const& o) const -> bool {
     if (den == 0 && o.den == 0) return num && o.num && num < o.num;
     if (den == 0) return num < 0;
     if (o.den == 0) return 0 < o.num;
@@ -114,10 +129,10 @@ struct fraction {
     }
     return num < o.num;
   }
-  auto operator>(const fraction& o) const -> bool { return o < *this; }
-  auto operator==(const fraction& o) const -> bool { return num == o.num && den == o.den; }
-  auto operator<=(const fraction& o) const -> bool { return operator==(o) || operator<(o); }
-  auto operator>=(const fraction& o) const -> bool { return o <= *this; }
+  auto operator>(fraction const& o) const -> bool { return o < *this; }
+  auto operator==(fraction const& o) const -> bool { return num == o.num && den == o.den; }
+  auto operator<=(fraction const& o) const -> bool { return operator==(o) || operator<(o); }
+  auto operator>=(fraction const& o) const -> bool { return o <= *this; }
   template <typename D>
   auto value() const -> D {
     return D(num) / D(den);
@@ -125,9 +140,11 @@ struct fraction {
   explicit operator float() const { return value<float>(); }
   explicit operator double() const { return value<double>(); }
   explicit operator long double() const { return value<long double>(); }
-  auto abs() const -> fraction { return fraction(num < 0 ? -num : num, den, false); }
+  auto abs() const -> fraction {
+    return fraction(num < 0 ? -num : num, den, fraction_details::skip_gcd{});
+  }
   struct compare_as_pair {
-    auto operator()(const fraction& a, const fraction& b) const -> bool {
+    auto operator()(fraction const& a, fraction const& b) const -> bool {
       return a.num < b.num || (a.num == b.num && a.den < b.den);
     }
   };

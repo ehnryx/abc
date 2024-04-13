@@ -4,8 +4,8 @@
  */
 #pragma once
 
-#include "geometry/lines.h"
 #include "geometry/point.h"
+#include "geometry/primitives.h"
 #include "geometry/segment.h"
 
 #include <algorithm>
@@ -48,10 +48,10 @@ struct polygon {
   }
 
   template <std::floating_point F = T>
-  bool on_boundary(epsilon<F> eps, point<T> const& c) const {
+  bool on_boundary(epsilon<F> eps, point<F> const& c) const {
     bool ok = false;
     for (int i = size() - 1, j = 0; not ok && j < size(); i = j++) {
-      ok |= on_segment(eps, p[i], p[j], c);
+      ok |= on_segment<F>(eps, p[i], p[j], c);
     }
     return ok;
   }
@@ -66,11 +66,11 @@ struct polygon {
   }
 
   template <std::floating_point F = T>
-  bool contains(epsilon<F> eps, const point<T>& c, strict strict = {false}) const {
+  bool contains(epsilon<F> eps, const point<F>& c, strict strict = {false}) const {
     if (on_boundary(eps, c)) return not strict;
     double sum = 0;
     for (int i = size() - 1, j = 0; j < size(); i = j++) {
-      sum += std::atan2(cross(p[i] - c, p[j] - c), dot(p[i] - c, p[j] - c));
+      sum += double(std::atan2(cross(c - p[i], c - p[j]), dot(c - p[i], c - p[j])));
     }
     return std::abs(sum) > 1;
   }

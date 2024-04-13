@@ -7,7 +7,6 @@
  */
 #pragma once
 
-#include "geometry/lines.h"
 #include "geometry/point.h"
 
 template <typename T>
@@ -27,7 +26,7 @@ struct segment {
     return dot(v - point<F>(start), point<F>(direction())) /
            typename point<T>::intersection_t(direction().norm());
   }
-  auto operator<=>(segment const& o) const -> bool {
+  auto operator<=>(segment const& o) const -> auto {
     return std::tie(start, end) <=> std::tie(o.start, o.end);
   }
   friend std::ostream& operator<<(std::ostream& os, segment const& s) {
@@ -45,17 +44,17 @@ struct segment {
   // clang-format on
 };
 
-template <typename T>
-auto line_inter(segment<T> const& ab, segment<T> const& cd) {
-  return line_inter(ab.start, ab.end, cd.start, cd.end);
-}
+#include "utility/helpers.h"
 
-template <std::floating_point T>
-bool seg_x_seg(
-    epsilon<T> eps, segment<T> const& ab, segment<T> const& cd, strict strict = {false}) {
-  return seg_x_seg(eps, ab.start, ab.end, cd.start, cd.end, strict);
+#include <tuple>
+
+namespace geometry {
+template <typename Function, typename... Args>
+auto call(Function const& f, Args const&... args) -> decltype(auto) {
+  auto to_tuple = [](auto const& v) {
+    if constexpr (is_specialization_of<decltype(v), segment>) return std::tuple(v.start, v.end);
+    else return std::tuple(v);
+  };
+  return std::apply(f, std::tuple_cat(to_tuple(args)...));
 }
-template <geometry::non_floating T>
-bool seg_x_seg(segment<T> const& ab, segment<T> const& cd, strict strict = {false}) {
-  return seg_x_seg(ab.start, ab.end, cd.start, cd.end, strict);
-}
+}  // namespace geometry

@@ -28,26 +28,21 @@ struct circle_intersection_type {
   auto get_two() const -> std::tuple<point<T>, point<T>> { return std::get<two>(it); }
 };
 
-template <typename T, typename U>
-struct bigger_intersection_type {
-  using T_inter = point<T>::intersection_t;
-  using U_inter = point<U>::intersection_t;
-  using type = std::conditional_t<sizeof(T_inter) < sizeof(U_inter), U_inter, T_inter>;
+template <typename T>
+using circle_intersection_t = circle_intersection_type<T>;
+
+enum class tangent {
+  OUTER,
+  INNER,
 };
-
-template <typename T, typename U>
-using bigger_intersection_t = typename bigger_intersection_type<T, U>::type;
-
-template <typename T, typename U>
-using circle_intersection_t = circle_intersection_type<bigger_intersection_t<T, U>>;
 }  // namespace geometry
 
 template <typename T>
 struct circle {
   using type = T;
   using product_t = point<T>::product_t;
-  template <typename U>
-  using intersection_t = geometry::circle_intersection_t<T, U>;
+  using intersection_t = point<T>::intersection_t;
+  using circle_intersection_t = geometry::circle_intersection_t<intersection_t>;
 
   point<T> center;
   T radius;
@@ -94,40 +89,14 @@ struct circle {
   }
 
   /// Points are ordered in ccw order around the first circle (`this`)
-  /// ie. returns [before, after] intersection in the case of two intersections
-  template <typename U>
-  intersection_t<U> intersect(circle<U> const& o) const {
-    using I = geometry::bigger_intersection_t<T, U>;
-    if constexpr (not std::is_same_v<I, T> or not std::is_same_v<I, U>) {
-      return circle<I>(*this).intersect(circle<I>(o));
-    } else {
-      return _intersect_impl(o);
-    }
+  /// ie. returns [before_overlap, after_overlap] in the case of two intersections
+  auto intersect(circle<T> const& b) const -> circle_intersection_t
+    requires(geometry::non_floating<T>)
+  {
+    return circle<intersection_t>(*this).intersect(circle<intersection_t>(b));
   }
-
-  template <typename U, std::floating_point E>
-  intersection_t<U> intersect(circle<U> const& o, epsilon<E> eps) const {
-    using I = geometry::bigger_intersection_t<T, U>;
-    if constexpr (not std::is_same_v<I, T> or not std::is_same_v<I, U>) {
-      return circle<I>(*this).intersect(circle<I>(o), eps);
-    } else {
-      return _intersect_impl(o, epsilon<I>{eps});
-    }
-  }
-
-  template <typename U>
-  intersection_t<U> intersect(point<U> const& u, point<U> const& v) const {
-    using I = geometry::bigger_intersection_t<T, U>;
-    if constexpr (not std::is_same_v<I, T> or not std::is_same_v<I, U>) {
-      return circle<I>(*this).intersect(point<I>(u), point<I>(v));
-    } else {
-      return _intersect_impl(u, v);
-    }
-  }
-
- private:
-  intersection_t<T> _intersect_impl(circle<T> const& b) const
-    requires(not std::is_integral_v<T>)  // TODO this one almost works for integral T
+  auto intersect(circle<T> const& b) const -> circle_intersection_t
+    requires(std::is_floating_point_v<T>)  // TODO this one almost works for integral T
   {
     auto const d2 = norm(b.center - center);
     if (d2 == 0) return {radius == b.radius};
@@ -145,9 +114,16 @@ struct circle {
     return {std::tuple(it - shift, it + shift)};
   }
 
-  template <std::floating_point F = T>
-    requires(std::is_same_v<F, T>)
-  intersection_t<F> _intersect_impl(circle<F> const& b, epsilon<F> eps) const {
+  template <typename F>
+  auto intersect(epsilon<F> eps, circle<T> const& b) const -> circle_intersection_t
+    requires(geometry::non_floating<T>)
+  {
+    return circle<intersection_t>(*this).intersect(eps, circle<intersection_t>(b));
+  }
+  template <typename F>
+  auto intersect(epsilon<F> eps, circle<T> const& b) const -> circle_intersection_t
+    requires(std::is_floating_point_v<T>)
+  {
     auto const eps2 = eps * eps;
     auto const d2 = norm(b.center - center);
     if (d2 < eps2) return {std::abs(radius - b.radius) < eps};
@@ -162,13 +138,41 @@ struct circle {
     return {std::tuple(it - shift, it + shift)};
   }
 
-  intersection_t<T> _intersect_impl(point<T> const& u, point<T> const& v) const {
+  auto intersect(point<T> const& u, point<T> const& v) const -> circle_intersection_t
+    requires(geometry::non_floating<T>)
+  {
+    using I = intersection_t;
+    return circle<I>(*this).intersect(point<I>(u), point<I>(v));
+  }
+  auto intersect(point<T> const& u, point<T> const& v) const -> circle_intersection_t
+    requires(std::is_floating_point_v<T>)
+  {
     if (std::abs(line_point_dist(u, v, center)) > radius) return {false};
     auto const mid = project(u, v, center);
     auto const h2 = radius * radius - norm(mid - center);
     if (h2 <= 0) return {mid};
     auto const shift = std::sqrt(h2 / norm(v - u)) * (v - u);
     return {std::tuple(mid - shift, mid + shift)};
+  }
+
+  auto tangent(circle<T> const& b, geometry::tangent tangent_type) const
+      -> std::pair<point<intersection_t>, point<intersection_t>>
+    requires(geometry::non_floating<T>)
+  {
+    return circle<intersection_t>(*this).tangent(circle<intersection_t>(b), tangent_type);
+  }
+  auto tangent(circle<T> const& b, geometry::tangent tangent_type) const
+      -> std::pair<point<T>, point<T>>
+    requires(std::is_floating_point_v<T>)
+  {
+    auto const d = abs(center - b.center);
+    auto const angle = std::asin(
+        (tangent_type == geometry::tangent::OUTER ? radius - b.radius : radius + b.radius) / d);
+    auto const rot = point<T>::polar(1, angle);
+    auto const dir = perp(center - b.center) * rot / abs(center - b.center);
+    return std::pair(
+        center + dir * radius,
+        b.center + (tangent_type == geometry::tangent::OUTER ? dir : -dir) * b.radius);
   }
 };
 
