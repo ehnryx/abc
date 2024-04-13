@@ -11,6 +11,8 @@
 
 #include "geometry/point3d.h"
 
+#include <functional>
+
 /// p lies on the plane and normal is normal to the plane
 /// a and b lie on the line
 /// value bound: X^2
@@ -22,7 +24,7 @@ auto plane_line_inter(
   if constexpr (std::is_same_v<T, I>) {
     return a + (b - a) * (dot(normal, p - a) / dot(normal, b - a));
   } else {
-    return a + (b - a) * (I(dot(normal, p - a)) / I(dot(normal, b - a)));
+    return point3d<I>(a) + point3d<I>(b - a) * (I(dot(normal, p - a)) / I(dot(normal, b - a)));
   }
 }
 
@@ -125,6 +127,33 @@ auto project_to_plane(
     point3d<T> const& a, point3d<T> const& b, point3d<T> const& c, point3d<T> const& v) {
   using I = typename point3d<T>::intersection_t;
   return project_to_plane<I>(a, cross(b - a, c - a), v);
+}
+
+/// assumes from and to are unit vectors
+/// TODO only supports floating points
+template <std::floating_point T>
+auto rotation_matrix_unit(point3d<T> const& from, point3d<T> const& to)
+    -> std::function<point3d<T>(point3d<T>)> {
+  auto const normal = cross(from, to);
+  auto const cosv = dot(from, to);
+  if (geometry::sign(epsilon<T>{1e-9}, 1 + cosv) == 0) return [](auto const& v) { return -v; };
+  auto const f = 1 / (1 + cosv);
+  return [n = normal, nxx = normal.x * normal.x * f, nyy = normal.y * normal.y * f,
+          nzz = normal.z * normal.z * f, nxy = normal.x * normal.y * f,
+          nyz = normal.y * normal.z * f, nzx = normal.z * normal.x * f](auto const& v) {
+    return v + point3d<T>{
+                   n.y * v.z - n.z * v.y + nxy * v.y + nzx * v.z - v.x * (nyy + nzz),
+                   n.z * v.x - n.x * v.z + nyz * v.z + nxy * v.x - v.y * (nzz + nxx),
+                   n.x * v.y - n.y * v.x + nzx * v.x + nyz * v.y - v.z * (nxx + nyy),
+               };
+  };
+}
+
+/// assumes from and to are non-zero
+/// TODO only supports floating points
+template <std::floating_point T>
+auto rotation_matrix(point3d<T> const& from, point3d<T> const& to) {
+  return rotation_matrix_unit(from / abs(from), to / abs(to));
 }
 
 // TODO plane-plane intersection, parallel checking projection
