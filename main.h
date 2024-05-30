@@ -62,7 +62,7 @@ struct solve_main_wrapper {
   }
 };
 
-#if defined(FAST_INPUT)
+#if defined(FAST_INPUT) or defined(FAST_INPUT_BUFFER)
 #include "utility/fast_input.h"
 #endif
 
