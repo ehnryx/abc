@@ -55,7 +55,7 @@ struct solve_main_wrapper {
 #if defined(PRINT_TIMING)
       auto duration = std::chrono::high_resolution_clock::now() - start_time;
       using namespace std::chrono;
-      std::cerr << "\n[t" << testnum << "] " << duration / 1.0s << "s\n\n";
+      std::cerr << "[t" << testnum << "] " << duration / 1.0s << "s\n";
 #endif
     }
     return 0;
@@ -88,6 +88,7 @@ auto main(int argc, char** argv) -> int {
 using ll = long long;
 constexpr char nl = '\n';
 
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <set>
